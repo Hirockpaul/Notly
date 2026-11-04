@@ -2,6 +2,7 @@ import type { PcmAudioChunk } from "../types/audio";
 
 const DEFAULT_BACKEND_URL = "http://127.0.0.1:8765";
 const DEFAULT_TIMEOUT_MS = 4000;
+const DEFAULT_FINALIZE_TIMEOUT_MS = 200000;
 const configuredBackendUrl = (import.meta.env as { readonly VITE_BACKEND_URL?: string })
   .VITE_BACKEND_URL;
 
@@ -46,11 +47,25 @@ export interface AlignedTranscriptSegment {
 
 export interface SpeechSessionResult {
   sessionId: string;
-  status: "completed";
+  status: "completed" | "completed_with_errors";
   transcript: {
     session_id: string;
     segments: AlignedTranscriptSegment[];
   };
+  errors: UtteranceError[];
+}
+
+export interface UtteranceError {
+  utteranceId: string;
+  message: string;
+}
+
+export interface SpeechSessionProgress {
+  sessionId: string;
+  status: "recording" | "processing" | "completed" | "completed_with_errors";
+  transcript: SpeechSessionResult["transcript"];
+  pendingUtterances: number;
+  errors: UtteranceError[];
 }
 
 interface AudioBackendClientOptions {
@@ -75,7 +90,7 @@ export class AudioBackendClient {
   }
 
   async startSession(externalSignal?: AbortSignal): Promise<SpeechSessionStart> {
-    return this.requestJson<SpeechSessionStart>("/api/sessions/start", externalSignal);
+    return this.requestJson<SpeechSessionStart>("/api/sessions/start", "POST", externalSignal);
   }
 
   async finishSession(
@@ -84,6 +99,19 @@ export class AudioBackendClient {
   ): Promise<SpeechSessionResult> {
     return this.requestJson<SpeechSessionResult>(
       `/api/sessions/${encodeURIComponent(sessionId)}/finish`,
+      "POST",
+      externalSignal,
+      DEFAULT_FINALIZE_TIMEOUT_MS,
+    );
+  }
+
+  async getSessionTranscript(
+    sessionId: string,
+    externalSignal?: AbortSignal,
+  ): Promise<SpeechSessionProgress> {
+    return this.requestJson<SpeechSessionProgress>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/transcript`,
+      "GET",
       externalSignal,
     );
   }
@@ -145,7 +173,12 @@ export class AudioBackendClient {
     }
   }
 
-  private async requestJson<T>(path: string, externalSignal?: AbortSignal): Promise<T> {
+  private async requestJson<T>(
+    path: string,
+    method: "GET" | "POST",
+    externalSignal?: AbortSignal,
+    timeoutMs = this.timeoutMs,
+  ): Promise<T> {
     const requestController = new AbortController();
     let timedOut = false;
     const handleExternalAbort = () => requestController.abort();
@@ -153,10 +186,10 @@ export class AudioBackendClient {
     const timeout = globalThis.setTimeout(() => {
       timedOut = true;
       requestController.abort();
-    }, this.timeoutMs);
+    }, timeoutMs);
     try {
       const response = await this.fetchImplementation(`${this.baseUrl}${path}`, {
-        method: "POST",
+        method,
         signal: requestController.signal,
       });
       if (!response.ok) {

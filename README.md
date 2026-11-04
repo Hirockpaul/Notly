@@ -13,7 +13,9 @@ Microphone → 16 kHz mono PCM16 → local session API → VAD utterances
 
 The backend owns session IDs, validates ordered audio chunks, bounds utterances to 30 seconds,
 flushes final speech on stop, and waits for pending transcription before returning the transcript.
-Diarization is not invoked in Solo Mode.
+While recording, the frontend polls a full transcript snapshot so completed utterances appear
+progressively and a missed request can reconnect without gaps or duplicates. The final response is
+authoritative. Diarization is not invoked in Solo Mode.
 
 ## Setup
 
@@ -65,6 +67,19 @@ data transfer.
 Use `NOTO_TRANSCRIPTION_PROVIDER=fake` for local development and automated tests. Fake mode requires
 no credentials and does not perform real speech recognition.
 
+### Manual NVIDIA verification
+
+1. Set the NVIDIA variables above, start the backend, then start the browser or Tauri frontend.
+2. Record two short phrases separated by at least a second of silence. Each completed phrase should
+   appear while recording, in spoken order, with a recording-relative timestamp.
+3. Speak another phrase and press Stop before pausing. The status should show final processing and
+   the flushed phrase should appear before completion.
+4. Confirm the backend response contains no API key or provider metadata. Repeat once with fake mode
+   to distinguish integration behavior from hosted service availability.
+
+This is a manual hosted-service check and requires a valid NVIDIA key, current Function ID, network
+access, microphone permission, and any applicable account credits.
+
 ## Verification
 
 ```sh
@@ -84,7 +99,9 @@ pytest -q
 ## Current limitations
 
 - Canary hosted ASR is offline-only; Noto sends completed utterances rather than streaming partials.
-- Transcripts appear after recording is stopped.
+- Progressive text represents completed VAD utterances, not word-by-word streaming partials.
+- Hosted transcription latency depends on utterance length, network conditions, and NVIDIA service
+  availability.
 - Solo Mode does not identify or separate multiple speakers.
 - The built-in energy VAD is intentionally lightweight and is not a production neural VAD.
 - Hosted availability, quotas, Function IDs, and pricing are controlled by NVIDIA.

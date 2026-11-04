@@ -35,6 +35,7 @@ describe("AudioBackendClient", () => {
             sessionId: "server-session",
             status: "completed",
             transcript: { session_id: "server-session", segments: [] },
+            errors: [],
           }),
           { status: 200 },
         ),
@@ -50,6 +51,31 @@ describe("AudioBackendClient", () => {
       "http://127.0.0.1:8765/api/sessions/start",
       "http://127.0.0.1:8765/api/sessions/server-session/finish",
     ]);
+    expect(fetchImplementation.mock.calls.map(([, request]) => request?.method)).toEqual([
+      "POST",
+      "POST",
+    ]);
+  });
+
+  it("retrieves a full reconnectable transcript snapshot with GET", async () => {
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          sessionId: "server-session",
+          status: "recording",
+          transcript: { session_id: "server-session", segments: [] },
+          pendingUtterances: 1,
+          errors: [],
+        }),
+        { status: 200 },
+      ),
+    );
+    const client = new AudioBackendClient({ fetchImplementation });
+
+    const snapshot = await client.getSessionTranscript("server-session");
+
+    expect(snapshot.pendingUtterances).toBe(1);
+    expect(fetchImplementation.mock.calls[0][1]?.method).toBe("GET");
   });
 
   it("sends raw PCM16 bytes with the required metadata headers", async () => {
@@ -176,6 +202,7 @@ describe("AudioChunkTransport", () => {
                 },
               ],
             },
+            errors: [],
           }),
           { status: 200 },
         ),

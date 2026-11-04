@@ -1,6 +1,6 @@
 import type { PcmAudioChunk } from "../types/audio";
 import { AudioBackendClient, AudioBackendError } from "./audio-backend-client";
-import type { SpeechSessionResult } from "./audio-backend-client";
+import type { SpeechSessionProgress, SpeechSessionResult } from "./audio-backend-client";
 
 const MAX_QUEUED_CHUNKS = 4;
 
@@ -62,6 +62,13 @@ export class AudioChunkTransport {
 
   resume(): void {
     if (this.sessionId && !this.failed) this.accepting = true;
+  }
+
+  async getProgress(): Promise<SpeechSessionProgress> {
+    if (!this.sessionId) {
+      throw new AudioBackendError("unavailable", "There is no active audio session.");
+    }
+    return this.client.getSessionTranscript(this.sessionId);
   }
 
   async finishSession(): Promise<SpeechSessionResult> {

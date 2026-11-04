@@ -3,6 +3,12 @@
 Local FastAPI session and audio-ingestion service for Noto AI Solo Mode. Audio remains in memory;
 detected utterances are sent to the selected transcription provider and released after completion.
 
+`GET /api/sessions/{session_id}/transcript` returns a reconnectable full snapshot containing the
+timestamp-aligned completed utterances, pending count, and per-utterance errors. `POST
+/api/sessions/{session_id}/finish` flushes the last utterance and waits for every bounded ASR task;
+successful text is retained if another utterance fails. Idle disconnected recording sessions are
+cancelled after five minutes.
+
 ## Setup and server
 
 ```bash

@@ -44,15 +44,21 @@ export function RecordingPage() {
   const isRequesting = status === "requesting";
   const isActive = isRecording || isPaused;
   const isBusy = ingestion.status === "starting" || ingestion.status === "processing";
-  const segments = ingestion.result?.transcript.segments ?? [];
+  const segments = ingestion.segments;
   const statusLabel =
     ingestion.status === "starting"
       ? "Starting local session"
       : ingestion.status === "processing"
         ? "Processing final audio"
-        : ingestion.status === "completed"
-          ? "Session completed"
-          : getStatusLabel(status);
+        : ingestion.status === "transcribing"
+          ? `Transcribing ${ingestion.pendingUtterances} utterance${ingestion.pendingUtterances === 1 ? "" : "s"}`
+          : ingestion.status === "detecting"
+            ? "Detecting speech"
+            : ingestion.status === "completed"
+              ? ingestion.utteranceErrors.length > 0
+                ? "Completed with transcription errors"
+                : "Session completed"
+              : getStatusLabel(status);
 
   const handleStart = async () => {
     try {
@@ -227,6 +233,20 @@ export function RecordingPage() {
         </div>
       ) : null}
 
+      {ingestion.utteranceErrors.length > 0 ? (
+        <div
+          className="mt-4 rounded-xl border border-amber-300/20 bg-amber-300/10 p-4 text-amber-100"
+          role="alert"
+        >
+          <strong className="text-xs">Some speech could not be transcribed</strong>
+          <ul className="mt-2 grid gap-1 text-[10px] text-amber-100/70">
+            {ingestion.utteranceErrors.map((utteranceError) => (
+              <li key={utteranceError.utteranceId}>{utteranceError.message}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       <div className="mt-5 grid grid-cols-[minmax(0,1.5fr)_minmax(260px,.7fr)] gap-4">
         <Card className="min-h-90 p-6">
           <SectionHeader
@@ -240,19 +260,17 @@ export function RecordingPage() {
                 ? "Finalizing the local speech pipeline..."
                 : ingestion.status === "completed"
                   ? "Final timestamp-aligned pipeline result"
-                  : "The transcript appears after the recording is stopped"
+                  : "Completed utterances appear here while you continue recording"
             }
             title="Your transcript"
           />
           <div className="mt-5 grid gap-1">
-            {segments.map((segment, index) => (
+            {segments.map((segment) => (
               <article
                 className="grid grid-cols-[34px_1fr] gap-3 border-t border-[#1d2029] py-4 first:border-t-0"
                 key={segment.utterance_id}
               >
-                <div
-                  className={`flex size-8.5 items-center justify-center rounded-full text-[11px] font-bold ${speakerColor(index)}`}
-                >
+                <div className="flex size-8.5 items-center justify-center rounded-full bg-indigo-400/10 text-[11px] font-bold text-indigo-300">
                   {segment.speaker.charAt(0) || "?"}
                 </div>
                 <div>
@@ -270,7 +288,11 @@ export function RecordingPage() {
               <p className="py-12 text-center text-xs text-[#686f80]">
                 {ingestion.status === "completed"
                   ? "No speech utterances were detected in this session."
-                  : "No finalized transcript yet."}
+                  : ingestion.status === "processing"
+                    ? "Processing final audio..."
+                    : ingestion.status === "transcribing"
+                      ? "Transcribing completed speech..."
+                      : "Listening for completed speech..."}
               </p>
             ) : null}
           </div>
@@ -308,14 +330,6 @@ function formatTimestamp(seconds: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const remainder = totalSeconds % 60;
   return `${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`;
-}
-
-function speakerColor(index: number): string {
-  return [
-    "bg-indigo-400/10 text-indigo-300",
-    "bg-cyan-300/10 text-cyan-300",
-    "bg-amber-300/10 text-amber-300",
-  ][index % 3];
 }
 
 function formatElapsedTime(elapsedMs: number): string {

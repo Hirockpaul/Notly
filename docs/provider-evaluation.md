@@ -38,5 +38,13 @@ audio to NVIDIA and may consume credits or incur account charges.
 - transient unavailable, deadline, internal, and rate-limit failures use bounded exponential retry.
 - Errors returned to the frontend contain safe provider summaries, never credentials or audio.
 - Empty NVIDIA transcripts are omitted from the final aligned segment list.
+- At most two utterances are transcribed concurrently within a session; additional completed
+  utterances wait in the bounded worker gate rather than starting another provider call.
+- Progressive UI updates use polling of a full transcript snapshot. They are completed utterances,
+  not NVIDIA streaming recognition results.
+- Segment timestamps come from accumulated 16 kHz PCM frame durations at the local VAD boundary.
+  Results are sorted by those timestamps, so provider completion order cannot reorder the transcript.
+- Finishing flushes active speech and waits for pending provider calls. Per-utterance failures are
+  returned beside all successful segments instead of invalidating the session.
 
 No OpenAI, local NeMo, CUDA, PyTorch, GPU runtime, or diarization dependency is part of this mode.

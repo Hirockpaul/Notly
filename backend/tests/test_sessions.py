@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import AsyncIterator
 
 import pytest
@@ -8,7 +9,7 @@ from app.processing.models import DiarizationSegment, TranscriptionResult, Utter
 from app.processing.pipeline import SpeechSessionPipeline
 from app.processing.segmentation import UtteranceSegmenter
 from app.providers.fakes import FakeDiarizationProvider, ScriptedVoiceActivityDetector
-from app.services.speech_sessions import PipelineProcessingError, SpeechSessionManager
+from app.services.speech_sessions import SessionNotFoundError, SpeechSessionManager
 
 
 @pytest.fixture
@@ -131,6 +132,47 @@ async def test_manager_reports_provider_failure_and_cleans_resources() -> None:
     session = await manager.start()
     await manager.push(session.session_id, 0, pcm(), 16000, 1)
 
-    with pytest.raises(PipelineProcessingError):
-        await manager.finish(session.session_id)
+    result = await manager.finish(session.session_id)
+    assert result.transcript.segments == []
+    assert result.errors[0].utterance_id == "utterance-0001"
+    assert result.errors[0].message == "provider unavailable"
     assert manager.active_session_count == 0
+
+    snapshot = await manager.progress(session.session_id)
+    assert snapshot.status == "completed_with_errors"
+    assert snapshot.result == result
+
+
+@pytest.mark.asyncio
+async def test_idle_disconnected_session_is_cleaned_up() -> None:
+    manager = SpeechSessionManager(session_idle_timeout_seconds=0.01)
+    session = await manager.start()
+
+    await asyncio.sleep(0.02)
+
+    assert manager.active_session_count == 0
+    with pytest.raises(SessionNotFoundError, match="Unknown speech session"):
+        await manager.progress(session.session_id)
+
+
+@pytest.mark.anyio
+async def test_progress_endpoint_is_reconnectable_after_finish(client: AsyncClient) -> None:
+    session_id = await start(client)
+    await push(client, session_id, 0, pcm())
+
+    recording = await client.get(f"/api/sessions/{session_id}/transcript")
+    assert recording.status_code == 200
+    assert recording.json()["status"] == "recording"
+
+    await client.post(f"/api/sessions/{session_id}/finish")
+    completed = await client.get(f"/api/sessions/{session_id}/transcript")
+    assert completed.status_code == 200
+    assert completed.json()["status"] == "completed"
+    assert completed.json()["pendingUtterances"] == 0
+    assert len(completed.json()["transcript"]["segments"]) == 1
+
+
+@pytest.mark.anyio
+async def test_progress_endpoint_rejects_unknown_session(client: AsyncClient) -> None:
+    response = await client.get("/api/sessions/missing/transcript")
+    assert response.status_code == 404
