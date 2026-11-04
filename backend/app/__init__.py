@@ -1,0 +1,1 @@
+"""Noto AI local backend."""

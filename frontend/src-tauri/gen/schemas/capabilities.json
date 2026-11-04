@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Baseline capability for the main Noto AI window.","local":true,"windows":["main"],"permissions":["core:default"]}}
