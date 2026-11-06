@@ -23,11 +23,13 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            backend_bridge::backend_register_request,
             backend_bridge::backend_start_session,
             backend_bridge::backend_send_audio_chunk,
             backend_bridge::backend_get_transcript,
             backend_bridge::backend_finish_session,
             backend_bridge::backend_generate_notes,
+            backend_bridge::backend_cancel_request,
             backend_lifecycle::backend_status,
             backend_lifecycle::backend_restart,
             storage::save_completed_session,
@@ -58,6 +60,7 @@ pub fn run() {
                 event,
                 tauri::RunEvent::Exit | tauri::RunEvent::ExitRequested { .. }
             ) {
+                app.state::<backend_bridge::BackendBridge>().cancel_all();
                 app.state::<backend_lifecycle::BackendLifecycle>().stop();
             }
         });

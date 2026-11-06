@@ -43,7 +43,17 @@ npm run tauri:build
 
 Do not copy a Linux sidecar into a Windows package. Build and test each sidecar on its target OS with the matching Rust target triple.
 
-Tauri starts `noto-backend`, waits up to 10 seconds for `GET /health`, exposes lifecycle state through `backend_status`, and terminates the owned process on exit. FastAPI binds only to `127.0.0.1:8765`; React communicates with it only through allow-listed Rust commands.
+Tauri allocates a loopback-only port, starts `noto-backend` with a per-launch authentication token, waits up to 10 seconds for an authenticated `GET /health`, exposes lifecycle state through `backend_status`, and terminates only its generation-owned process on exit. React communicates with FastAPI only through allow-listed Rust commands and never receives the port or token.
+
+Each frontend backend call first obtains a one-use, server-generated registration nonce. Dispatch atomically claims that nonce and cancellation targets it rather than the reusable client label, so a stale cancellation cannot affect a later request. At most 1,024 requests may be registered concurrently; additional registrations fail explicitly without evicting existing cancellation identities. Completion and cancellation remove registrations, so sequential request volume is not capped.
+
+### Parent-death cleanup
+
+On Linux, Rust passes the desktop PID and its `/proc/<pid>/stat` start time to the sidecar. The backend first opens a kernel `pidfd`, then validates the PID's current `/proc` start time while retaining that descriptor, and only waits after the identity matches. When the process referenced by the `pidfd` exits—even through `SIGKILL`—the descriptor becomes readable and Uvicorn begins bounded graceful shutdown. A missing parent, unavailable identity, or mismatched start time fails closed. The ordering closes the identity-check-to-`pidfd_open` window; it does not provide semantics beyond the kernel's `pidfd` reference and the separately read `/proc` identity. This is an ownership signal, not a network heartbeat, so temporary UI or IPC stalls do not stop the backend.
+
+On Windows, Rust obtains the desktop process creation time with `GetProcessTimes`. The backend opens a `SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION` handle, compares that handle's creation time with the expected identity, and only then waits for it to become signaled. A missing identity or reused PID is treated as parent death. Tauri process-group mode additionally uses a Windows Job Object for explicit lifecycle kills. Windows behavior must be verified on a Windows build before release; cross-platform mock tests cannot validate Win32 handle or PyInstaller behavior.
+
+Running `uvicorn` directly for development does not set `NOTO_PARENT_PID`, so parent monitoring is disabled in that workflow.
 
 Local FastAPI session and audio-ingestion service for Noto AI Solo Mode. Audio remains in memory;
 detected utterances are sent to the selected transcription provider and released after completion.

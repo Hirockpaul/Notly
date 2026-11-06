@@ -220,7 +220,7 @@ fn deliver_chunks(
         } else {
             chunk.clone()
         };
-        if let Err(error) = post_message(&http, &url, &body) {
+        if let Err(error) = post_message(http, url, &body) {
             return Err(DeliveryError {
                 message: format!(
                     "{error} Delivered {index} of {total} messages; notes remain saved locally."

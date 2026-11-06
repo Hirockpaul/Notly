@@ -7,7 +7,8 @@ const DEFAULT_FINALIZE_TIMEOUT_MS = 200000;
 const DEFAULT_NOTES_TIMEOUT_MS = 70000;
 type InvokeImplementation = (command: string, args?: Record<string, unknown>) => Promise<unknown>;
 
-export type AudioBackendErrorCode = "unavailable" | "timeout" | "validation" | "cancelled";
+export type AudioBackendErrorCode =
+  "unavailable" | "timeout" | "validation" | "cancelled" | "capacity";
 
 export class AudioBackendError extends Error {
   readonly code: AudioBackendErrorCode;
@@ -153,20 +154,11 @@ export class AudioBackendClient {
     sessionId: string,
     externalSignal?: AbortSignal,
   ): Promise<AudioChunkAcknowledgement> {
-    const requestController = new AbortController();
-    let timedOut = false;
-    const handleExternalAbort = () => requestController.abort();
-    externalSignal?.addEventListener("abort", handleExternalAbort, { once: true });
-    const timeout = globalThis.setTimeout(() => {
-      timedOut = true;
-      requestController.abort();
-    }, this.timeoutMs);
-
     const bytes = new Uint8Array(chunk.data.byteLength);
     bytes.set(new Uint8Array(chunk.data.buffer, chunk.data.byteOffset, chunk.data.byteLength));
-
-    try {
-      return (await this.invokeImplementation("backend_send_audio_chunk", {
+    return this.request<AudioChunkAcknowledgement>(
+      "backend_send_audio_chunk",
+      {
         chunk: {
           bytes: Array.from(bytes),
           channels: 1,
@@ -174,23 +166,9 @@ export class AudioBackendClient {
           sequence: chunk.sequence,
           sessionId,
         },
-      })) as AudioChunkAcknowledgement;
-    } catch (error) {
-      if (error instanceof AudioBackendError) throw error;
-      if (timedOut) {
-        throw new AudioBackendError("timeout", "The local audio backend did not respond in time.");
-      }
-      if (externalSignal?.aborted) {
-        throw new AudioBackendError("cancelled", "The audio request was cancelled.");
-      }
-      throw normalizeInvokeError(
-        error,
-        "The local audio backend is unavailable. Recording continues locally.",
-      );
-    } finally {
-      globalThis.clearTimeout(timeout);
-      externalSignal?.removeEventListener("abort", handleExternalAbort);
-    }
+      },
+      externalSignal,
+    );
   }
 
   private async request<T>(
@@ -199,7 +177,12 @@ export class AudioBackendClient {
     externalSignal?: AbortSignal,
     timeoutMs = this.timeoutMs,
   ): Promise<T> {
+    if (externalSignal?.aborted) {
+      throw new AudioBackendError("cancelled", "The audio request was cancelled.");
+    }
+    const requestId = createRequestId();
     const requestController = new AbortController();
+    let registrationId: string | undefined;
     let timedOut = false;
     const handleExternalAbort = () => requestController.abort();
     externalSignal?.addEventListener("abort", handleExternalAbort, { once: true });
@@ -207,16 +190,32 @@ export class AudioBackendClient {
       timedOut = true;
       requestController.abort();
     }, timeoutMs);
+    const cancelRustRequest = () => {
+      if (registrationId !== undefined) {
+        void this.invokeImplementation("backend_cancel_request", { registrationId }).catch(
+          () => undefined,
+        );
+      }
+    };
+    requestController.signal.addEventListener("abort", cancelRustRequest, { once: true });
+    const abortPromise = new Promise<never>((_resolve, reject) => {
+      requestController.signal.addEventListener(
+        "abort",
+        () => reject(new DOMException("Aborted", "AbortError")),
+        { once: true },
+      );
+    });
+    const registrationPromise = this.invokeImplementation("backend_register_request", {
+      requestId,
+    }) as Promise<string>;
     try {
+      registrationId = await Promise.race([registrationPromise, abortPromise]);
+      if (typeof registrationId !== "string") {
+        throw new Error("The local backend returned an invalid request registration.");
+      }
       return await Promise.race([
-        this.invokeImplementation(command, args) as Promise<T>,
-        new Promise<T>((_resolve, reject) => {
-          requestController.signal.addEventListener(
-            "abort",
-            () => reject(new DOMException("Aborted", "AbortError")),
-            { once: true },
-          );
-        }),
+        this.invokeImplementation(command, { ...args, requestId, registrationId }) as Promise<T>,
+        abortPromise,
       ]);
     } catch (error) {
       if (error instanceof AudioBackendError) throw error;
@@ -228,10 +227,30 @@ export class AudioBackendClient {
       }
       throw normalizeInvokeError(error, "The local audio backend is unavailable.");
     } finally {
+      if (registrationId === undefined && requestController.signal.aborted) {
+        void registrationPromise.then(
+          (lateRegistrationId) =>
+            this.invokeImplementation("backend_cancel_request", {
+              registrationId: lateRegistrationId,
+            }),
+          () => undefined,
+        );
+      } else if (registrationId !== undefined) {
+        void this.invokeImplementation("backend_cancel_request", { registrationId }).catch(
+          () => undefined,
+        );
+      }
       globalThis.clearTimeout(timeout);
+      requestController.signal.removeEventListener("abort", cancelRustRequest);
       externalSignal?.removeEventListener("abort", handleExternalAbort);
     }
   }
+}
+
+let requestSequence = 0;
+function createRequestId(): string {
+  requestSequence += 1;
+  return `request-${crypto.randomUUID()}-${requestSequence}`;
 }
 
 function normalizeInvokeError(error: unknown, fallback: string): AudioBackendError {
@@ -242,9 +261,13 @@ function normalizeInvokeError(error: unknown, fallback: string): AudioBackendErr
       const code: AudioBackendErrorCode =
         payload.code === "timeout"
           ? "timeout"
-          : payload.code === "validation"
-            ? "validation"
-            : "unavailable";
+          : payload.code === "cancelled"
+            ? "cancelled"
+            : payload.code === "capacity"
+              ? "capacity"
+              : payload.code === "validation"
+                ? "validation"
+                : "unavailable";
       return new AudioBackendError(
         code,
         payload.message,

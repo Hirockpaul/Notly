@@ -335,7 +335,7 @@ impl Database {
             .query_row("SELECT COUNT(*) FROM notes", [], |row| row.get(0))
             .map_err(safe_database_error)?;
         let integrity = integrity_check(&connection)?;
-        let database_size_bytes = self.path.as_ref().map(database_files_size).unwrap_or(0);
+        let database_size_bytes = self.path.as_deref().map(database_files_size).unwrap_or(0);
         Ok(StorageStatistics {
             storage_mode: "sqlite",
             total_recordings,
@@ -802,13 +802,13 @@ fn apply_directory_permissions(_path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-fn database_files_size(path: &PathBuf) -> u64 {
+fn database_files_size(path: &Path) -> u64 {
     let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
         return 0;
     };
     let parent = path.parent().unwrap_or_else(|| Path::new(""));
     [
-        path.clone(),
+        path.to_path_buf(),
         parent.join(format!("{file_name}-wal")),
         parent.join(format!("{file_name}-shm")),
     ]
@@ -911,7 +911,7 @@ pub fn confirm_legacy_migration(
 pub fn create_backup(database: State<'_, Database>) -> Result<Option<String>, String> {
     let Some(path) = rfd::FileDialog::new()
         .set_title("Create Noto AI backup")
-        .set_file_name(&format!(
+        .set_file_name(format!(
             "noto-backup-{}.json",
             chrono::Utc::now().format("%Y-%m-%d")
         ))
