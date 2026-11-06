@@ -1,6 +1,5 @@
 import {
   AlertCircle,
-  Check,
   ChevronDown,
   Mic2,
   MoreHorizontal,
@@ -9,12 +8,19 @@ import {
   ShieldCheck,
   Square,
 } from "lucide-react";
+import { useState } from "react";
 
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { SectionHeader } from "../../components/ui/SectionHeader";
+import { NotesPanel } from "../notes/NotesPanel";
+import type { NotesUiStatus } from "../notes/NotesPanel";
 import { useAudioIngestion } from "../../hooks/useAudioIngestion";
 import { useMicrophone } from "../../hooks/useMicrophone";
+import { AudioBackendClient } from "../../services/audio-backend-client";
+import type { NotesDocument } from "../../services/audio-backend-client";
+import { saveCompletedSession, saveGeneratedNotes } from "../../services/session-storage";
+import type { SavedSession } from "../../services/session-storage";
 
 const waveHeights = [
   20, 34, 48, 72, 38, 56, 26, 64, 84, 52, 30, 74, 46, 68, 24, 58, 80, 36, 62, 44, 28, 70, 50, 32,
@@ -23,6 +29,13 @@ const waveHeights = [
 
 export function RecordingPage() {
   const ingestion = useAudioIngestion();
+  const [notesClient] = useState(() => new AudioBackendClient());
+  const [activeView, setActiveView] = useState<"transcript" | "notes">("transcript");
+  const [notes, setNotes] = useState<NotesDocument | null>(null);
+  const [notesStatus, setNotesStatus] = useState<NotesUiStatus>("idle");
+  const [notesError, setNotesError] = useState<string | null>(null);
+  const [storageError, setStorageError] = useState<string | null>(null);
+  const [savedSession, setSavedSession] = useState<SavedSession | null>(null);
   const {
     activeDeviceLabel,
     audioLevel,
@@ -62,6 +75,12 @@ export function RecordingPage() {
 
   const handleStart = async () => {
     try {
+      setActiveView("transcript");
+      setNotes(null);
+      setNotesError(null);
+      setStorageError(null);
+      setNotesStatus("idle");
+      setSavedSession(null);
       await ingestion.startSession();
       const microphoneStarted = await start();
       if (!microphoneStarted) await ingestion.finishSession();
@@ -74,9 +93,49 @@ export function RecordingPage() {
     try {
       // Stopping capture emits its final partial PCM chunk synchronously before resolving.
       await stop();
-      await ingestion.finishSession();
+      const result = await ingestion.finishSession();
+      try {
+        setSavedSession(await saveCompletedSession(result));
+      } catch (saveError) {
+        setStorageError(
+          saveError instanceof Error
+            ? saveError.message
+            : typeof saveError === "string"
+              ? saveError
+              : "The completed recording was not saved.",
+        );
+      }
     } catch {
-      // The ingestion hook exposes a user-facing error state.
+      // The ingestion hook exposes recording and backend errors.
+    }
+  };
+
+  const handleGenerateNotes = async (regenerate: boolean) => {
+    if (!ingestion.result || ingestion.result.transcript.segments.length === 0) return;
+    setNotesError(null);
+    setNotesStatus(regenerate ? "regenerating" : "generating");
+    try {
+      const generated = await notesClient.generateNotes(ingestion.result.sessionId, regenerate);
+      setNotes(generated.notes);
+      setNotesStatus("generated");
+      try {
+        await saveGeneratedNotes(ingestion.result.sessionId, generated.notes);
+      } catch (saveError) {
+        setStorageError(
+          saveError instanceof Error
+            ? saveError.message
+            : typeof saveError === "string"
+              ? saveError
+              : "The generated notes were not saved.",
+        );
+      }
+    } catch (generationError) {
+      setNotesError(
+        generationError instanceof Error
+          ? generationError.message
+          : "Notes generation failed unexpectedly.",
+      );
+      setNotesStatus("error");
     }
   };
 
@@ -84,13 +143,11 @@ export function RecordingPage() {
     <div className="mx-auto max-w-360 px-[clamp(28px,4vw,64px)] pt-11.5 pb-14">
       <header className="mb-7 flex items-center justify-between">
         <div>
-          <span className="text-[10px] font-bold tracking-[0.12em] text-[#686f80] uppercase">
-            Live session
-          </span>
-          <h1 className="mt-2 text-[clamp(29px,3vw,38px)] leading-tight font-semibold tracking-[-0.045em]">
+          <span className="text-xs font-medium text-[#737373]">Live session</span>
+          <h1 className="mt-2 text-[clamp(28px,3vw,32px)] leading-tight font-semibold tracking-[-0.03em]">
             Recording
           </h1>
-          <p className="mt-2.5 text-sm text-[#9298a7]">
+          <p className="mt-2.5 text-sm text-[#A3A3A3]">
             Capture microphone audio privately on this device.
           </p>
         </div>
@@ -101,21 +158,21 @@ export function RecordingPage() {
 
       <Card className="grid grid-cols-[auto_minmax(150px,.55fr)_minmax(240px,1fr)_auto] items-center gap-6 p-6">
         <div
-          className={`flex size-12 items-center justify-center rounded-full border ${isRecording ? "border-red-400/30 bg-red-400/10 text-red-300" : "border-[#252936] bg-white/4 text-[#9298a7]"}`}
+          className={`flex size-11 items-center justify-center rounded-[10px] border ${isRecording ? "border-[#EF4444]/40 bg-[#EF4444]/10 text-[#EF4444]" : "border-[#383838] bg-[#303030] text-[#A3A3A3]"}`}
         >
           {isStopped ? <Square fill="currentColor" size={23} /> : <Mic2 size={25} />}
         </div>
         <div className="min-w-0">
-          <div className="flex items-center gap-2 text-[11px] text-[#9298a7]">
+          <div className="flex items-center gap-2 text-[11px] text-[#A3A3A3]">
             <span
-              className={`size-[7px] rounded-full ${isRecording ? "animate-pulse bg-red-400 shadow-[0_0_0_4px_rgb(248_113_113/10%)]" : "bg-[#59606f]"}`}
+              className={`size-[7px] rounded-full ${isRecording ? "animate-pulse bg-[#EF4444]" : "bg-[#555555]"}`}
             />
             {statusLabel}
           </div>
           <strong className="mt-1 block text-xl tracking-tight">
             {formatElapsedTime(elapsedMs)}
           </strong>
-          <span className="mt-1 block truncate text-[10px] text-[#686f80]">
+          <span className="mt-1 block truncate text-[10px] text-[#737373]">
             {isActive ? activeDeviceLabel : "Microphone access starts only when you press Start"}
           </span>
         </div>
@@ -125,7 +182,7 @@ export function RecordingPage() {
         >
           {waveHeights.map((height, index) => (
             <span
-              className="w-[3px] rounded-full bg-indigo-400 transition-[height] duration-100"
+              className={`w-[3px] rounded-full transition-[height] duration-150 ${isRecording ? "bg-[#F5F5F5]" : "bg-[#737373]"}`}
               key={index}
               style={{ height: `${Math.max(6, height * (0.2 + audioLevel * 1.5))}%` }}
             />
@@ -171,11 +228,11 @@ export function RecordingPage() {
       </Card>
 
       <div className="mt-3 flex items-center justify-between gap-5">
-        <label className="flex items-center gap-3 text-[10px] text-[#686f80]">
+        <label className="flex items-center gap-3 text-xs text-[#737373]">
           <span>Input device</span>
           <div className="relative">
             <select
-              className="appearance-none rounded-lg border border-[#252936] bg-[#0d0f14] py-2 pr-8 pl-3 text-[11px] text-[#9298a7] outline-none focus:border-indigo-400/60"
+              className="appearance-none rounded-md border border-[#383838] bg-[#343434] py-2 pr-8 pl-3 text-xs text-[#F5F5F5] outline-none transition-colors focus:border-[#3B82F6]"
               disabled={isActive || isRequesting}
               onChange={(event) => setSelectedDeviceId(event.target.value)}
               value={selectedDeviceId}
@@ -196,7 +253,7 @@ export function RecordingPage() {
             />
           </div>
         </label>
-        <div className="flex items-center gap-2 text-[10px] text-[#686f80]">
+        <div className="flex items-center gap-2 text-xs text-[#737373]">
           <ShieldCheck size={15} />
           <span>
             Solo Mode uploads detected speech to NVIDIA when hosted transcription is enabled.
@@ -206,13 +263,13 @@ export function RecordingPage() {
 
       {error ? (
         <div
-          className="mt-4 flex items-center gap-3 rounded-xl border border-red-400/20 bg-red-400/10 p-4 text-red-200"
+          className="mt-4 flex items-center gap-3 rounded-[10px] border border-[#EF4444]/30 bg-[#EF4444]/10 p-4 text-[#EF4444]"
           role="alert"
         >
           <AlertCircle size={17} />
           <div>
             <strong className="text-xs">Microphone unavailable</strong>
-            <p className="mt-1 text-[10px] text-red-200/70">{error.message}</p>
+            <p className="mt-1 text-[10px] text-[#EF4444]/80">{error.message}</p>
           </div>
           <Button onClick={() => void handleStart()} size="small" variant="secondary">
             Try again
@@ -222,24 +279,37 @@ export function RecordingPage() {
 
       {ingestion.error ? (
         <div
-          className="mt-4 flex items-center gap-3 rounded-xl border border-red-400/20 bg-red-400/10 p-4 text-red-200"
+          className="mt-4 flex items-center gap-3 rounded-[10px] border border-[#EF4444]/30 bg-[#EF4444]/10 p-4 text-[#EF4444]"
           role="alert"
         >
           <AlertCircle size={17} />
           <div>
             <strong className="text-xs">Local backend connection error</strong>
-            <p className="mt-1 text-[10px] text-red-200/70">{ingestion.error.message}</p>
+            <p className="mt-1 text-[10px] text-[#EF4444]/80">{ingestion.error.message}</p>
+          </div>
+        </div>
+      ) : null}
+
+      {storageError ? (
+        <div
+          className="mt-4 flex items-center gap-3 rounded-[10px] border border-[#EF4444]/30 bg-[#EF4444]/10 p-4 text-[#EF4444]"
+          role="alert"
+        >
+          <AlertCircle size={17} />
+          <div>
+            <strong className="text-xs">Local storage error</strong>
+            <p className="mt-1 text-[10px] text-[#EF4444]/80">{storageError}</p>
           </div>
         </div>
       ) : null}
 
       {ingestion.utteranceErrors.length > 0 ? (
         <div
-          className="mt-4 rounded-xl border border-amber-300/20 bg-amber-300/10 p-4 text-amber-100"
+          className="mt-4 rounded-[10px] border border-[#F59E0B]/30 bg-[#F59E0B]/10 p-4 text-[#F59E0B]"
           role="alert"
         >
           <strong className="text-xs">Some speech could not be transcribed</strong>
-          <ul className="mt-2 grid gap-1 text-[10px] text-amber-100/70">
+          <ul className="mt-2 grid gap-1 text-[10px] text-[#F59E0B]/80">
             {ingestion.utteranceErrors.map((utteranceError) => (
               <li key={utteranceError.utteranceId}>{utteranceError.message}</li>
             ))}
@@ -247,79 +317,99 @@ export function RecordingPage() {
         </div>
       ) : null}
 
-      <div className="mt-5 grid grid-cols-[minmax(0,1.5fr)_minmax(260px,.7fr)] gap-4">
-        <Card className="min-h-90 p-6">
-          <SectionHeader
-            action={
-              <span className="rounded-full border border-[#252936] px-2 py-1 text-[10px] text-[#9298a7]">
-                Solo mode
-              </span>
-            }
-            description={
-              ingestion.status === "processing"
-                ? "Finalizing the local speech pipeline..."
-                : ingestion.status === "completed"
-                  ? "Final timestamp-aligned pipeline result"
-                  : "Completed utterances appear here while you continue recording"
-            }
-            title="Your transcript"
-          />
-          <div className="mt-5 grid gap-1">
-            {segments.map((segment) => (
-              <article
-                className="grid grid-cols-[34px_1fr] gap-3 border-t border-[#1d2029] py-4 first:border-t-0"
-                key={segment.utterance_id}
-              >
-                <div className="flex size-8.5 items-center justify-center rounded-full bg-indigo-400/10 text-[11px] font-bold text-indigo-300">
-                  {segment.speaker.charAt(0) || "?"}
-                </div>
-                <div>
-                  <header className="flex items-center justify-between">
-                    <strong className="text-xs">{segment.speaker}</strong>
-                    <span className="text-[10px] text-[#686f80]">
-                      {formatTimestamp(segment.start)}
-                    </span>
-                  </header>
-                  <p className="mt-1.5 text-xs leading-6 text-[#9298a7]">{segment.text}</p>
-                </div>
-              </article>
-            ))}
-            {segments.length === 0 ? (
-              <p className="py-12 text-center text-xs text-[#686f80]">
-                {ingestion.status === "completed"
-                  ? "No speech utterances were detected in this session."
-                  : ingestion.status === "processing"
-                    ? "Processing final audio..."
-                    : ingestion.status === "transcribing"
-                      ? "Transcribing completed speech..."
-                      : "Listening for completed speech..."}
-              </p>
-            ) : null}
-          </div>
-        </Card>
+      <div className="mt-5 flex gap-2" aria-label="Session view">
+        <Button
+          aria-pressed={activeView === "transcript"}
+          onClick={() => setActiveView("transcript")}
+          size="small"
+          variant={activeView === "transcript" ? "primary" : "secondary"}
+        >
+          Transcript
+        </Button>
+        <Button
+          aria-pressed={activeView === "notes"}
+          onClick={() => setActiveView("notes")}
+          size="small"
+          variant={activeView === "notes" ? "primary" : "secondary"}
+        >
+          AI Notes
+        </Button>
+      </div>
 
-        <Card className="flex min-h-90 flex-col p-6">
-          <SectionHeader
-            description="Available after note analysis is implemented"
-            title="Important points"
-          />
-          <div className="mt-5">
-            <div className="grid grid-cols-[24px_1fr] gap-2 border-t border-[#1d2029] py-3">
-              <span className="flex size-5 items-center justify-center rounded-full bg-indigo-400/10 text-indigo-300">
-                <Check size={13} />
-              </span>
-              <p className="text-[11px] leading-5 text-[#9298a7]">
-                No important points have been generated for this session.
-              </p>
+      <div className="mt-3">
+        {activeView === "transcript" ? (
+          <Card className="min-h-90 p-6">
+            <SectionHeader
+              action={
+                <span className="rounded-full border border-[#383838] px-2 py-1 text-[10px] text-[#A3A3A3]">
+                  Solo mode
+                </span>
+              }
+              description={
+                ingestion.status === "processing"
+                  ? "Finalizing the local speech pipeline..."
+                  : ingestion.status === "completed"
+                    ? "Final timestamp-aligned pipeline result"
+                    : "Completed utterances appear here while you continue recording"
+              }
+              title="Your transcript"
+            />
+            <div className="mt-5 grid gap-1">
+              {segments.map((segment) => (
+                <article
+                  className="grid grid-cols-[34px_1fr] gap-3 border-t border-[#303030] py-4 first:border-t-0"
+                  key={segment.utterance_id}
+                >
+                  <div className="flex size-8.5 items-center justify-center rounded-full bg-[#343434] text-[11px] font-bold text-[#F5F5F5]">
+                    {segment.speaker.charAt(0) || "?"}
+                  </div>
+                  <div>
+                    <header className="flex items-center justify-between">
+                      <strong className="text-xs">{segment.speaker}</strong>
+                      <span className="text-[10px] text-[#737373]">
+                        {formatTimestamp(segment.start)}
+                      </span>
+                    </header>
+                    <p className="mt-1.5 text-xs leading-6 text-[#A3A3A3]">{segment.text}</p>
+                  </div>
+                </article>
+              ))}
+              {segments.length === 0 ? (
+                <p className="py-12 text-center text-xs text-[#737373]">
+                  {ingestion.status === "completed"
+                    ? "No speech utterances were detected in this session."
+                    : ingestion.status === "processing"
+                      ? "Processing final audio..."
+                      : ingestion.status === "transcribing"
+                        ? "Transcribing completed speech..."
+                        : "Listening for completed speech..."}
+                </p>
+              ) : null}
             </div>
-          </div>
-          <div className="mt-auto flex items-center justify-between border-t border-[#1d2029] pt-4 text-[10px] text-[#686f80]">
-            <span className="flex items-center gap-2">
-              <span className="size-[7px] rounded-full bg-[#59606f]" /> Analysis unavailable
-            </span>
-            <small>Transcript only</small>
-          </div>
-        </Card>
+          </Card>
+        ) : (
+          <Card className="min-h-90 p-6">
+            <NotesPanel
+              canGenerate={
+                ingestion.status === "completed" &&
+                (ingestion.result?.transcript.segments.length ?? 0) > 0
+              }
+              error={notesError}
+              delivery={
+                savedSession
+                  ? {
+                      title: savedSession.title,
+                      createdAt: savedSession.createdAt,
+                      durationSeconds: savedSession.durationSeconds,
+                    }
+                  : undefined
+              }
+              notes={notes}
+              onGenerate={(regenerate) => void handleGenerateNotes(regenerate)}
+              status={notesStatus}
+            />
+          </Card>
+        )}
       </div>
     </div>
   );

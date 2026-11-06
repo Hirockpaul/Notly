@@ -2,7 +2,7 @@ import type { ButtonHTMLAttributes, ReactNode } from "react";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   children: ReactNode;
-  variant?: "primary" | "secondary" | "ghost" | "danger";
+  variant?: "primary" | "secondary" | "ghost" | "danger" | "accent";
   size?: "default" | "icon" | "small";
 }
 
@@ -15,10 +15,12 @@ export function Button({
   ...props
 }: ButtonProps) {
   const variants = {
-    primary: "bg-indigo-400 text-[#0e1020] hover:bg-indigo-300",
-    secondary: "border-[#252936] bg-white/4 text-[#f4f5f7] hover:border-[#343948] hover:bg-white/7",
-    ghost: "bg-transparent text-[#9298a7] hover:border-[#343948] hover:bg-white/7",
-    danger: "border-red-400/20 bg-red-400/10 text-red-300 hover:bg-red-400/20",
+    primary: "bg-[#F5F5F5] text-[#171717] hover:bg-white",
+    secondary: "border-[#383838] bg-[#343434] text-[#F5F5F5] hover:bg-[#3A3A3A]",
+    ghost: "bg-transparent text-[#A3A3A3] hover:bg-[#3A3A3A] hover:text-[#F5F5F5]",
+    danger: "border-[#EF4444]/30 bg-transparent text-[#EF4444] hover:bg-[#EF4444]/10",
+    accent:
+      "border-white/70 bg-[linear-gradient(180deg,#F7F7F7_0%,#E5E5E5_48%,#B9B9B9_100%)] text-[#1F1F1F] shadow-[inset_0_1px_0_rgb(255_255_255/90%),inset_0_-1px_0_rgb(0_0_0/10%),0_3px_7px_rgb(0_0_0/28%)] hover:brightness-105",
   };
   const sizes = {
     default: "min-h-9.5 px-4",
@@ -27,7 +29,7 @@ export function Button({
   };
   return (
     <button
-      className={`inline-flex cursor-pointer items-center justify-center gap-2 rounded-[9px] border border-transparent text-xs font-semibold transition duration-150 hover:not-disabled:-translate-y-px disabled:cursor-not-allowed disabled:opacity-40 ${variants[variant]} ${sizes[size]} ${className}`.trim()}
+      className={`inline-flex cursor-pointer items-center justify-center gap-2 rounded-md border border-transparent text-sm font-medium transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B82F6] disabled:cursor-not-allowed disabled:text-[#555555] disabled:opacity-50 ${variants[variant]} ${sizes[size]} ${className}`.trim()}
       type={type}
       {...props}
     >

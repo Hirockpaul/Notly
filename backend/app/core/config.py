@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     nvidia_asr_max_retries: int = Field(
         default=2, ge=0, le=5, validation_alias="NVIDIA_ASR_MAX_RETRIES"
     )
+    notes_provider: str = "fake"
+    notes_api_url: str = ""
+    notes_api_key: str = ""
+    notes_model: str = ""
+    notes_timeout_seconds: float = Field(default=60.0, gt=0)
 
     @model_validator(mode="after")
     def validate_provider(self) -> "Settings":
@@ -52,6 +57,23 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "NVIDIA transcription requires backend environment variables: "
                     + ", ".join(missing)
+                )
+        if self.notes_provider not in {"fake", "openai_compatible"}:
+            raise ValueError("NOTO_NOTES_PROVIDER must be 'fake' or 'openai_compatible'.")
+        if self.notes_provider == "openai_compatible":
+            missing_notes = [
+                name
+                for name, value in (
+                    ("NOTO_NOTES_API_URL", self.notes_api_url),
+                    ("NOTO_NOTES_API_KEY", self.notes_api_key),
+                    ("NOTO_NOTES_MODEL", self.notes_model),
+                )
+                if not value
+            ]
+            if missing_notes:
+                raise ValueError(
+                    "Hosted notes generation requires backend environment variables: "
+                    + ", ".join(missing_notes)
                 )
         return self
 

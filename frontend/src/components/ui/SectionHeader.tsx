@@ -10,8 +10,8 @@ export function SectionHeader({ title, description, action }: SectionHeaderProps
   return (
     <header className="flex items-start justify-between">
       <div>
-        <h2 className="text-base font-bold tracking-[-0.02em]">{title}</h2>
-        {description ? <p className="mt-1 text-[11px] text-[#686f80]">{description}</p> : null}
+        <h2 className="text-lg font-semibold tracking-[-0.02em]">{title}</h2>
+        {description ? <p className="mt-1 text-xs text-[#737373]">{description}</p> : null}
       </div>
       {action}
     </header>

@@ -1,5 +1,9 @@
 # Noto AI
 
+Noto AI is a Tauri desktop recorder with local SQLite transcripts and structured notes. Backups and optional manual Discord delivery are available from Settings; see [backup and restore](docs/backup-and-restore.md), [Discord integration](docs/discord-integration.md), and the [release checklist](docs/release-checklist.md).
+
+> Release status: the desktop shell is not yet self-contained because the Python backend is not bundled or launched by Tauri. See the packaging gate in the release checklist before distributing an installer.
+
 Noto AI is a local desktop recorder built with Tauri 2, React, TypeScript, Vite, Rust, and a local
 FastAPI backend. The current product mode is **Solo Mode**: one user records microphone audio and
 receives a timestamped transcript.
@@ -16,6 +20,11 @@ flushes final speech on stop, and waits for pending transcription before returni
 While recording, the frontend polls a full transcript snapshot so completed utterances appear
 progressively and a missed request can reconnect without gaps or duplicates. The final response is
 authoritative. Diarization is not invoked in Solo Mode.
+
+After a session completes, the user can explicitly request structured notes. The backend sends the
+unchanged final transcript to a separate fake or OpenAI-compatible notes provider, validates the
+structured result, and returns it without modifying the transcript. Notes are never generated
+automatically.
 
 ## Setup
 
@@ -67,6 +76,41 @@ data transfer.
 Use `NOTO_TRANSCRIPTION_PROVIDER=fake` for local development and automated tests. Fake mode requires
 no credentials and does not perform real speech recognition.
 
+## AI notes provider
+
+Fake notes are enabled by default for development and automated tests. To use a hosted
+OpenAI-compatible chat-completions endpoint, configure `backend/.env`:
+
+```dotenv
+NOTO_NOTES_PROVIDER=openai_compatible
+NOTO_NOTES_API_URL=https://provider.example/v1/chat/completions
+NOTO_NOTES_API_KEY=your-backend-only-key
+NOTO_NOTES_MODEL=your-model-name
+NOTO_NOTES_TIMEOUT_SECONDS=60
+```
+
+The URL must be the provider's complete chat-completions endpoint. Noto sends a temperature-zero,
+JSON-object request containing only the timestamped transcript and grounding instructions. The
+provider must return the structured notes object in `choices[0].message.content`. Credentials stay
+in the backend; hosted usage may incur provider charges.
+
+To use notes, complete a recording, review the Transcript view, open **AI Notes**, and click
+**Generate Notes**. Use **Regenerate** only when another explicit provider generation is wanted.
+Generated sections can be copied individually, copied together as Markdown, or exported as `.md`
+and `.txt`.
+
+Packaged Tauri builds store completed transcripts and generated notes in one Rust-owned SQLite
+database named `noto.db` inside the platform-specific application-data directory resolved by Tauri.
+SQLite is authoritative in desktop mode. Browser development uses a clearly labeled, bounded
+localStorage fallback; its records are not mixed with desktop records. Backend transcript and
+generation caches remain temporary and are not the persistent source of truth.
+
+On the first packaged launch after this upgrade, Noto validates `noto.completed-sessions.v1`, imports
+unique valid records in one SQLite transaction without overwriting existing rows, records the
+migration, verifies the imported/skipped count through a second command, and only then removes the
+legacy key. Invalid or interrupted migration preserves the original data and blocks normal startup
+with a recovery message.
+
 ### Manual NVIDIA verification
 
 1. Set the NVIDIA variables above, start the backend, then start the browser or Tauri frontend.
@@ -79,6 +123,19 @@ no credentials and does not perform real speech recognition.
 
 This is a manual hosted-service check and requires a valid NVIDIA key, current Function ID, network
 access, microphone permission, and any applicable account credits.
+
+### Manual hosted notes verification
+
+1. Configure the hosted notes variables above and restart the backend.
+2. Complete a recording containing a clear fact, an explicit decision, and one action item.
+3. Confirm no notes appear automatically when recording stops.
+4. Open **AI Notes**, click **Generate Notes**, and compare every generated claim with the unchanged
+   Transcript view.
+5. Test per-section copy, Copy all, `.md`, and `.txt` export, then navigate to **My Notes** and back.
+6. Click **Regenerate** and confirm the button cannot be clicked repeatedly while processing.
+
+Real hosted validation requires valid credentials, network access, a compatible model, and any
+applicable account credits.
 
 ## Verification
 
@@ -94,6 +151,10 @@ cd backend
 ruff check .
 ruff format --check .
 pytest -q
+
+cd ../frontend/src-tauri
+cargo check
+cargo test
 ```
 
 ## Current limitations
@@ -105,3 +166,7 @@ pytest -q
 - Solo Mode does not identify or separate multiple speakers.
 - The built-in energy VAD is intentionally lightweight and is not a production neural VAD.
 - Hosted availability, quotas, Function IDs, and pricing are controlled by NVIDIA.
+- Notes quality is limited by transcript accuracy and the configured hosted model. Schema validation
+  prevents malformed output but cannot prove every model statement is semantically grounded.
+- Desktop SQLite content is local and currently unencrypted at rest. Unix builds restrict the
+  database file to the current user where supported, but filesystem permissions are not encryption.

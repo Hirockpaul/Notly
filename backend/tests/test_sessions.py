@@ -176,3 +176,36 @@ async def test_progress_endpoint_is_reconnectable_after_finish(client: AsyncClie
 async def test_progress_endpoint_rejects_unknown_session(client: AsyncClient) -> None:
     response = await client.get("/api/sessions/missing/transcript")
     assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_notes_endpoint_requires_completed_nonempty_session(client: AsyncClient) -> None:
+    unfinished = await start(client)
+    assert (await client.post(f"/api/sessions/{unfinished}/notes", json={})).status_code == 409
+
+    empty = await start(client)
+    await push(client, empty, 0, pcm(amplitude=0))
+    await client.post(f"/api/sessions/{empty}/finish")
+    response = await client.post(f"/api/sessions/{empty}/notes", json={})
+    assert response.status_code == 422
+    assert response.json()["detail"] == "A meaningful transcript is required to generate notes."
+
+
+@pytest.mark.anyio
+async def test_notes_endpoint_generates_caches_and_regenerates_without_mutating_transcript(
+    client: AsyncClient,
+) -> None:
+    session_id = await start(client)
+    await push(client, session_id, 0, pcm())
+    finished = await client.post(f"/api/sessions/{session_id}/finish")
+    original_transcript = finished.json()["transcript"]
+
+    generated = await client.post(f"/api/sessions/{session_id}/notes", json={})
+    cached = await client.post(f"/api/sessions/{session_id}/notes", json={})
+    regenerated = await client.post(f"/api/sessions/{session_id}/notes", json={"regenerate": True})
+    transcript_after = await client.get(f"/api/sessions/{session_id}/transcript")
+
+    assert generated.status_code == cached.status_code == regenerated.status_code == 200
+    assert generated.json() == cached.json() == regenerated.json()
+    assert generated.json()["notes"]["keyPoints"] == ["Speech detected by the local test provider."]
+    assert transcript_after.json()["transcript"] == original_transcript

@@ -8,7 +8,7 @@ interface CardProps extends HTMLAttributes<HTMLElement> {
 export function Card({ children, className = "", variant = "default", ...props }: CardProps) {
   return (
     <section
-      className={`rounded-[18px] border border-[#252936] shadow-[0_18px_45px_rgb(0_0_0/18%)] ${variant === "elevated" ? "bg-[#1a1d27]" : "bg-[#14161d]"} ${className}`.trim()}
+      className={`rounded-[14px] border border-[#383838] ${variant === "elevated" ? "bg-[#303030]" : "bg-[#292929]"} ${className}`.trim()}
       {...props}
     >
       {children}

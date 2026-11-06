@@ -1,10 +1,11 @@
+import { invoke } from "@tauri-apps/api/core";
+
 import type { PcmAudioChunk } from "../types/audio";
 
-const DEFAULT_BACKEND_URL = "http://127.0.0.1:8765";
 const DEFAULT_TIMEOUT_MS = 4000;
 const DEFAULT_FINALIZE_TIMEOUT_MS = 200000;
-const configuredBackendUrl = (import.meta.env as { readonly VITE_BACKEND_URL?: string })
-  .VITE_BACKEND_URL;
+const DEFAULT_NOTES_TIMEOUT_MS = 70000;
+type InvokeImplementation = (command: string, args?: Record<string, unknown>) => Promise<unknown>;
 
 export type AudioBackendErrorCode = "unavailable" | "timeout" | "validation" | "cancelled";
 
@@ -68,38 +69,56 @@ export interface SpeechSessionProgress {
   errors: UtteranceError[];
 }
 
+export interface NotesActionItem {
+  task: string;
+  owner: string | null;
+  deadline: string | null;
+}
+
+export interface NotesDocument {
+  title: string;
+  summary: string | null;
+  keyPoints: string[];
+  actionItems: NotesActionItem[];
+  importantInformation: string[];
+  decisions: string[];
+  additionalContext: string[];
+}
+
+export interface NotesGenerationResult {
+  sessionId: string;
+  status: "completed";
+  notes: NotesDocument;
+}
+
 interface AudioBackendClientOptions {
-  baseUrl?: string;
-  fetchImplementation?: typeof fetch;
+  invokeImplementation?: InvokeImplementation;
   timeoutMs?: number;
 }
 
 export class AudioBackendClient {
-  private readonly baseUrl: string;
-  private readonly fetchImplementation: typeof fetch;
+  private readonly invokeImplementation: InvokeImplementation;
   private readonly timeoutMs: number;
 
   constructor({
-    baseUrl = configuredBackendUrl || DEFAULT_BACKEND_URL,
-    fetchImplementation = fetch,
+    invokeImplementation = (command, args) => invoke(command, args),
     timeoutMs = DEFAULT_TIMEOUT_MS,
   }: AudioBackendClientOptions = {}) {
-    this.baseUrl = baseUrl.replace(/\/$/, "");
-    this.fetchImplementation = fetchImplementation;
+    this.invokeImplementation = invokeImplementation;
     this.timeoutMs = timeoutMs;
   }
 
   async startSession(externalSignal?: AbortSignal): Promise<SpeechSessionStart> {
-    return this.requestJson<SpeechSessionStart>("/api/sessions/start", "POST", externalSignal);
+    return this.request<SpeechSessionStart>("backend_start_session", undefined, externalSignal);
   }
 
   async finishSession(
     sessionId: string,
     externalSignal?: AbortSignal,
   ): Promise<SpeechSessionResult> {
-    return this.requestJson<SpeechSessionResult>(
-      `/api/sessions/${encodeURIComponent(sessionId)}/finish`,
-      "POST",
+    return this.request<SpeechSessionResult>(
+      "backend_finish_session",
+      { sessionId },
       externalSignal,
       DEFAULT_FINALIZE_TIMEOUT_MS,
     );
@@ -109,10 +128,23 @@ export class AudioBackendClient {
     sessionId: string,
     externalSignal?: AbortSignal,
   ): Promise<SpeechSessionProgress> {
-    return this.requestJson<SpeechSessionProgress>(
-      `/api/sessions/${encodeURIComponent(sessionId)}/transcript`,
-      "GET",
+    return this.request<SpeechSessionProgress>(
+      "backend_get_transcript",
+      { sessionId },
       externalSignal,
+    );
+  }
+
+  async generateNotes(
+    sessionId: string,
+    regenerate = false,
+    externalSignal?: AbortSignal,
+  ): Promise<NotesGenerationResult> {
+    return this.request<NotesGenerationResult>(
+      "backend_generate_notes",
+      { sessionId, regenerate },
+      externalSignal,
+      DEFAULT_NOTES_TIMEOUT_MS,
     );
   }
 
@@ -134,27 +166,15 @@ export class AudioBackendClient {
     bytes.set(new Uint8Array(chunk.data.buffer, chunk.data.byteOffset, chunk.data.byteLength));
 
     try {
-      const response = await this.fetchImplementation(`${this.baseUrl}/api/audio/chunks`, {
-        body: bytes,
-        headers: {
-          "Content-Type": "application/octet-stream",
-          "X-Noto-Channels": "1",
-          "X-Noto-Sample-Rate": String(chunk.sampleRate),
-          "X-Noto-Sequence": String(chunk.sequence),
-          "X-Noto-Session-Id": sessionId,
+      return (await this.invokeImplementation("backend_send_audio_chunk", {
+        chunk: {
+          bytes: Array.from(bytes),
+          channels: 1,
+          sampleRate: chunk.sampleRate,
+          sequence: chunk.sequence,
+          sessionId,
         },
-        method: "POST",
-        signal: requestController.signal,
-      });
-
-      if (!response.ok) {
-        throw new AudioBackendError(
-          "validation",
-          await readErrorMessage(response),
-          response.status,
-        );
-      }
-      return (await response.json()) as AudioChunkAcknowledgement;
+      })) as AudioChunkAcknowledgement;
     } catch (error) {
       if (error instanceof AudioBackendError) throw error;
       if (timedOut) {
@@ -163,8 +183,8 @@ export class AudioBackendClient {
       if (externalSignal?.aborted) {
         throw new AudioBackendError("cancelled", "The audio request was cancelled.");
       }
-      throw new AudioBackendError(
-        "unavailable",
+      throw normalizeInvokeError(
+        error,
         "The local audio backend is unavailable. Recording continues locally.",
       );
     } finally {
@@ -173,9 +193,9 @@ export class AudioBackendClient {
     }
   }
 
-  private async requestJson<T>(
-    path: string,
-    method: "GET" | "POST",
+  private async request<T>(
+    command: string,
+    args: Record<string, unknown> | undefined,
     externalSignal?: AbortSignal,
     timeoutMs = this.timeoutMs,
   ): Promise<T> {
@@ -188,18 +208,16 @@ export class AudioBackendClient {
       requestController.abort();
     }, timeoutMs);
     try {
-      const response = await this.fetchImplementation(`${this.baseUrl}${path}`, {
-        method,
-        signal: requestController.signal,
-      });
-      if (!response.ok) {
-        throw new AudioBackendError(
-          "validation",
-          await readErrorMessage(response),
-          response.status,
-        );
-      }
-      return (await response.json()) as T;
+      return await Promise.race([
+        this.invokeImplementation(command, args) as Promise<T>,
+        new Promise<T>((_resolve, reject) => {
+          requestController.signal.addEventListener(
+            "abort",
+            () => reject(new DOMException("Aborted", "AbortError")),
+            { once: true },
+          );
+        }),
+      ]);
     } catch (error) {
       if (error instanceof AudioBackendError) throw error;
       if (timedOut) {
@@ -208,7 +226,7 @@ export class AudioBackendClient {
       if (externalSignal?.aborted) {
         throw new AudioBackendError("cancelled", "The audio request was cancelled.");
       }
-      throw new AudioBackendError("unavailable", "The local audio backend is unavailable.");
+      throw normalizeInvokeError(error, "The local audio backend is unavailable.");
     } finally {
       globalThis.clearTimeout(timeout);
       externalSignal?.removeEventListener("abort", handleExternalAbort);
@@ -216,20 +234,23 @@ export class AudioBackendClient {
   }
 }
 
-async function readErrorMessage(response: Response): Promise<string> {
-  try {
-    const payload = (await response.json()) as { detail?: unknown };
-    if (typeof payload.detail === "string") return payload.detail;
-    if (
-      payload.detail &&
-      typeof payload.detail === "object" &&
-      "message" in payload.detail &&
-      typeof payload.detail.message === "string"
-    ) {
-      return payload.detail.message;
+function normalizeInvokeError(error: unknown, fallback: string): AudioBackendError {
+  if (error instanceof AudioBackendError) return error;
+  if (error && typeof error === "object") {
+    const payload = error as { code?: unknown; message?: unknown; status?: unknown };
+    if (typeof payload.code === "string" && typeof payload.message === "string") {
+      const code: AudioBackendErrorCode =
+        payload.code === "timeout"
+          ? "timeout"
+          : payload.code === "validation"
+            ? "validation"
+            : "unavailable";
+      return new AudioBackendError(
+        code,
+        payload.message,
+        typeof payload.status === "number" ? payload.status : undefined,
+      );
     }
-  } catch {
-    // A validation response is not required to contain JSON.
   }
-  return `The local backend rejected the audio chunk (HTTP ${response.status}).`;
+  return new AudioBackendError("unavailable", fallback);
 }

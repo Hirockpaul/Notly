@@ -9,7 +9,7 @@ export function Toggle({ checked, label, onChange }: ToggleProps) {
     <button
       aria-checked={checked}
       aria-label={label}
-      className={`relative h-6 w-11 cursor-pointer rounded-full border transition ${checked ? "border-indigo-400/40 bg-indigo-400/30" : "border-[#343948] bg-[#0d0f14]"}`}
+      className={`relative h-6 w-11 cursor-pointer rounded-full border transition-colors duration-150 ${checked ? "border-[#3B82F6] bg-[#3B82F6]" : "border-[#383838] bg-[#343434]"}`}
       onClick={() => onChange(!checked)}
       role="switch"
       type="button"

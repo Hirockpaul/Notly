@@ -186,6 +186,14 @@ class SpeechSessionManager:
                 self._completed.popitem(last=False)
             return result
 
+    def completed_result(self, session_id: str) -> PipelineResult:
+        completed = self._completed.get(session_id)
+        if completed is not None:
+            return completed
+        if session_id in self._sessions:
+            raise SessionStateError("The speech session must be completed before generating notes.")
+        raise SessionNotFoundError("Unknown speech session.")
+
     def _touch(self, session: SpeechSession) -> None:
         if session.cleanup_task is not None:
             session.cleanup_task.cancel()
