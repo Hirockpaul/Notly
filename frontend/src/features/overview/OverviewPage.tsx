@@ -1,4 +1,4 @@
-import { Mic2, Play } from "lucide-react";
+import { Mic, Play } from "lucide-react";
 
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
@@ -10,10 +10,10 @@ interface OverviewPageProps {
 
 export function OverviewPage({ onNavigate }: OverviewPageProps) {
   return (
-    <div className="mx-auto max-w-360 px-[clamp(28px,4vw,64px)] pt-11.5 pb-14">
-      <header className="mb-8 flex items-start justify-between">
+    <div className="mx-auto max-w-360 px-[clamp(24px,4vw,64px)] pt-10 pb-16">
+      <header className="mb-8">
         <div>
-          <span className="text-xs font-medium text-[#737373]">
+          <span className="text-xs font-medium text-[#A3A3A3]">
             {new Date().toLocaleDateString(undefined, {
               weekday: "long",
               month: "long",
@@ -21,58 +21,46 @@ export function OverviewPage({ onNavigate }: OverviewPageProps) {
             })}
           </span>
           <h1 className="mt-2 text-[clamp(28px,3vw,32px)] leading-tight font-semibold tracking-[-0.03em]">
-            Good afternoon.
+            {greeting()}.
           </h1>
-          <p className="mt-2.5 text-sm text-[#A3A3A3]">
-            Capture the conversation. Keep what matters.
-          </p>
-        </div>
-        <div className="flex items-center gap-2 rounded-md border border-[#383838] bg-[#292929] px-3 py-2 text-xs text-[#A3A3A3]">
-          <span className="size-[7px] rounded-full bg-[#22C55E]" /> Ready to listen
         </div>
       </header>
 
-      <div>
-        <Card className="relative min-h-80 overflow-hidden border-[#30364D] bg-[#151722] p-9 shadow-[inset_0_1px_0_rgb(255_255_255/5%),0_18px_50px_rgb(0_0_0/25%)]">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_4%_0%,rgb(91_99_211/25%),transparent_43%)]" />
-          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(115deg,transparent_15%,rgb(255_255_255/3%)_34%,transparent_53%)]" />
-
-          <div className="relative z-10 max-w-110">
-            <div className="mb-9 flex size-13 items-center justify-center rounded-[14px] border border-[#5963A7]/65 bg-[linear-gradient(145deg,#353B72_0%,#232847_100%)] text-[#ACB5FF] shadow-[inset_0_1px_0_rgb(255_255_255/20%),0_12px_28px_rgb(31_38_96/35%)]">
-              <Mic2 size={27} />
-            </div>
-            <span className="text-[11px] font-semibold tracking-[0.15em] text-[#747B91] uppercase">
-              New conversation
-            </span>
-            <h2 className="mt-3 mb-2 text-[clamp(28px,3vw,34px)] font-medium tracking-[-0.035em] text-[#F2F3F8]">
-              Start listening
-            </h2>
-            <p className="mb-7 max-w-100 text-sm leading-7 text-[#979CAD]">
-              Record a conversation and let Noto organize the important parts for you.
-            </p>
-            <Button
-              variant="accent"
-              className="min-h-9 rounded-[5px] px-4 font-normal"
-              onClick={() => onNavigate("recording")}
-            >
-              <Play fill="currentColor" size={15} /> Start recording
-            </Button>
+      <Card className="relative grid min-h-95 overflow-hidden md:grid-cols-[minmax(0,1fr)_minmax(280px,0.82fr)]">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_4%_0%,rgb(129_140_248/13%),transparent_42%)]" />
+        <div className="relative z-10 flex max-w-150 flex-col justify-center p-9 md:p-10">
+          <div className="mb-9 flex size-14 items-center justify-center rounded-xl border border-[#59639A] bg-[#303554] text-[#C7D2FE] shadow-[0_8px_24px_rgb(79_70_229/16%)]">
+            <Mic size={27} strokeWidth={1.9} />
           </div>
-
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute right-8 bottom-9 flex h-20 items-center gap-1 opacity-75"
-          >
-            {[22, 38, 56, 34, 68, 45, 61, 42, 55, 29].map((height, index) => (
-              <span
-                key={`${height}-${index}`}
-                className="w-[3px] rounded-full bg-[linear-gradient(180deg,#6975C5_0%,#354079_100%)] shadow-[0_0_9px_rgb(105_117_197/25%)]"
-                style={{ height }}
-              />
-            ))}
-          </div>
-        </Card>
-      </div>
+          <span className="text-[11px] font-semibold tracking-[0.15em] text-[#818CF8] uppercase">
+            New conversation
+          </span>
+          <h2 className="mt-3 mb-2 text-[clamp(29px,3vw,34px)] font-medium tracking-[-0.035em] text-[#F5F5F5]">
+            Start listening
+          </h2>
+          <p className="mb-7 max-w-135 text-sm leading-6 text-[#B0B0B0]">
+            Record a conversation and let Noto organize the important parts for you.
+          </p>
+          <Button className="w-fit px-4" onClick={() => onNavigate("recording")}>
+            <Play fill="currentColor" size={14} /> Start recording
+          </Button>
+        </div>
+        <div className="relative z-10 m-4 hidden min-h-80 overflow-hidden rounded-xl border border-[#383838] md:block">
+          <img
+            alt="Atmospheric floral artwork behind textured glass"
+            className="h-full w-full object-cover object-center"
+            src="/imgs/2.jpg"
+          />
+          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgb(37_37_37/22%),transparent_35%)]" />
+        </div>
+      </Card>
     </div>
   );
+}
+
+function greeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
 }

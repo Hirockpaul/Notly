@@ -1,8 +1,9 @@
-import { AlertCircle, Copy, FileText, RefreshCw, Send, Sparkles } from "lucide-react";
+import { AlertCircle, Copy, FileText, RefreshCw, Sparkles } from "lucide-react";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
 import { Button } from "../../components/ui/Button";
+import { DiscordIcon } from "../../components/icons/DiscordIcon";
 import type { NotesDocument } from "../../services/audio-backend-client";
 import { recordDiscordDelivery, sendNotesToDiscord } from "../../services/desktop-integrations";
 
@@ -106,7 +107,7 @@ export function NotesPanel({
               size="small"
               variant="secondary"
             >
-              <Send size={13} />{" "}
+              <DiscordIcon size={13} />{" "}
               {sending ? "Sending..." : resumeAt > 0 ? "Retry remaining" : "Send to Discord"}
             </Button>
           ) : null}
