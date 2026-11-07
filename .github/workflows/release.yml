@@ -58,15 +58,13 @@ jobs:
         shell: bash
         run: |
           shopt -s nullglob
-          msi=(release-assets/*.msi)
-          nsis=(release-assets/*.exe)
+          dmg=(release-assets/*.dmg)
           deb=(release-assets/*.deb)
           appimage=(release-assets/*.AppImage)
-          (( ${#msi[@]} > 0 )) || { echo "Missing required MSI installer" >&2; exit 1; }
-          (( ${#nsis[@]} > 0 )) || { echo "Missing required NSIS installer" >&2; exit 1; }
+          (( ${#dmg[@]} > 0 )) || { echo "Missing required macOS disk image" >&2; exit 1; }
           (( ${#deb[@]} > 0 )) || { echo "Missing required Debian installer" >&2; exit 1; }
           (( ${#appimage[@]} > 0 )) || { echo "Missing required AppImage" >&2; exit 1; }
-          echo "Required assets: ${#msi[@]} MSI, ${#nsis[@]} NSIS, ${#deb[@]} Debian, ${#appimage[@]} AppImage"
+          echo "Required assets: ${#dmg[@]} DMG, ${#deb[@]} Debian, ${#appimage[@]} AppImage"
       - name: Publish release assets
         env:
           GH_TOKEN: ${{ github.token }}

@@ -28,10 +28,10 @@ jobs:
             os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             artifact: noto-ai-linux-x86_64
-          - name: Windows x86_64
-            os: windows-latest
-            target: x86_64-pc-windows-msvc
-            artifact: noto-ai-windows-x86_64
+          - name: macOS Apple Silicon
+            os: macos-15
+            target: aarch64-apple-darwin
+            artifact: noto-ai-macos-aarch64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
 
@@ -112,35 +112,17 @@ jobs:
             python scripts/check-version.py
           fi
 
-      - name: Prepare Linux sidecar environment
-        if: runner.os == 'Linux'
+      - name: Prepare native sidecar environment
         run: |
           python -m venv backend/.venv
           backend/.venv/bin/python -m pip install --upgrade pip
           backend/.venv/bin/python -m pip install -e './backend[dev,package]'
 
-      - name: Prepare Windows sidecar environment
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          python -m venv backend/.venv &&
-            backend/.venv/Scripts/python.exe -m pip install --upgrade pip &&
-            backend/.venv/Scripts/python.exe -m pip install -e './backend[dev,package]'
-
-      - name: Run Linux Python checks
-        if: runner.os == 'Linux'
+      - name: Run Python checks
         run: |
           backend/.venv/bin/python -m ruff check backend
           backend/.venv/bin/python -m ruff format --check backend
           backend/.venv/bin/python -m pytest backend
-
-      - name: Run Windows Python checks
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          backend/.venv/Scripts/python.exe -m ruff check backend &&
-            backend/.venv/Scripts/python.exe -m ruff format --check backend &&
-            backend/.venv/Scripts/python.exe -m pytest backend
 
       - name: Install Rust stable
         shell: bash
@@ -156,42 +138,17 @@ jobs:
           cargo fmt --all -- --check
           cargo clippy --all-targets --all-features --locked -- -D warnings
 
-      - name: Build Linux sidecar
-        if: runner.os == 'Linux'
+      - name: Build native sidecar
         run: ./scripts/build-sidecar.sh "${{ matrix.target }}"
 
-      - name: Verify Linux sidecar
-        if: runner.os == 'Linux'
+      - name: Verify native sidecar
         shell: bash
         run: |
           sidecar="frontend/src-tauri/binaries/noto-backend-${{ matrix.target }}"
           test -x "$sidecar"
           backend/.venv/bin/pyi-archive_viewer -r -l "$sidecar" | grep -F "'app.main'"
           backend/.venv/bin/pyi-archive_viewer -r -l "$sidecar" | grep -F "'app.parent_monitor'"
-          sha256sum "$sidecar"
-
-      - name: Build Windows sidecar
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: ./scripts/build-sidecar.ps1 "${{ matrix.target }}"
-
-      - name: Verify Windows sidecar
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $sidecar = "frontend/src-tauri/binaries/noto-backend-${{ matrix.target }}.exe"
-          if (-not (Test-Path -PathType Leaf $sidecar)) {
-            throw "Missing packaged sidecar: $sidecar"
-          }
-          $archive = & backend/.venv/Scripts/pyi-archive_viewer.exe -r -l $sidecar
-          $archiveText = $archive -join "`n"
-          if ($archiveText -notmatch "'app\.main'") {
-            throw "The packaged sidecar is missing the required app.main module."
-          }
-          if ($archiveText -notmatch "'app\.parent_monitor'") {
-            throw "The packaged sidecar is missing the required app.parent_monitor module."
-          }
-          Get-FileHash -Algorithm SHA256 $sidecar
+          backend/.venv/bin/python -c 'import hashlib, pathlib, sys; print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())' "$sidecar"
 
       - name: Run Rust tests with the native sidecar
         working-directory: frontend/src-tauri
@@ -208,10 +165,10 @@ jobs:
         working-directory: frontend
         run: npm run tauri:build -- --target "${{ matrix.target }}" --bundles appimage
 
-      - name: Build Windows installers
-        if: runner.os == 'Windows'
+      - name: Build required macOS disk image
+        if: runner.os == 'macOS'
         working-directory: frontend
-        run: npm run tauri:build -- --target "${{ matrix.target }}" --bundles nsis,msi
+        run: npm run tauri:build -- --target "${{ matrix.target }}" --bundles dmg
 
       - name: Verify Linux installer outputs
         if: runner.os == 'Linux'
@@ -220,16 +177,11 @@ jobs:
           compgen -G 'frontend/src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb' >/dev/null
           compgen -G 'frontend/src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage' >/dev/null
 
-      - name: Verify Windows installer outputs
-        if: runner.os == 'Windows'
-        shell: pwsh
+      - name: Verify macOS installer output
+        if: runner.os == 'macOS'
+        shell: bash
         run: |
-          if (-not (Get-ChildItem 'frontend/src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi')) {
-            throw 'Missing MSI installer.'
-          }
-          if (-not (Get-ChildItem 'frontend/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe')) {
-            throw 'Missing NSIS installer.'
-          }
+          compgen -G 'frontend/src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg' >/dev/null
 
       - name: Upload Linux installers
         if: runner.os == 'Linux'
@@ -242,13 +194,11 @@ jobs:
           if-no-files-found: error
           retention-days: ${{ inputs.retention-days }}
 
-      - name: Upload Windows installers
-        if: runner.os == 'Windows'
+      - name: Upload macOS installer
+        if: runner.os == 'macOS'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ matrix.artifact }}
-          path: |
-            frontend/src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi
-            frontend/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
+          path: frontend/src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
           if-no-files-found: error
           retention-days: ${{ inputs.retention-days }}

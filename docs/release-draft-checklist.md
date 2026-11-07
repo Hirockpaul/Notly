@@ -17,8 +17,7 @@ Copy this checklist into the draft GitHub Release and replace every placeholder 
 
 ## Required assets
 
-- [ ] Windows x86-64 MSI is attached and has a recorded size/checksum.
-- [ ] Windows x86-64 NSIS installer is attached and has a recorded size/checksum.
+- [ ] macOS Apple Silicon DMG is attached and has a recorded size/checksum.
 - [ ] Linux x86-64 Debian package is attached and has a recorded size/checksum.
 - [ ] Linux x86-64 AppImage is attached and has a recorded size/checksum.
 - [ ] Each required installer contains the matching native `noto-backend` sidecar.
@@ -27,14 +26,13 @@ Copy this checklist into the draft GitHub Release and replace every placeholder 
 
 - [ ] Pull-request CI passed: `<run link>`
 - [ ] Main-branch CI passed: `<run link>`
-- [ ] Tagged Windows build passed: `<run link>`
+- [ ] Tagged macOS build passed: `<run link>`
 - [ ] Tagged Linux build passed: `<run link>`
 - [ ] Release asset verification passed.
 
 ## Installed-runtime results
 
-- [ ] MSI tested on a clean supported Windows installation.
-- [ ] NSIS tested on a clean supported Windows installation.
+- [ ] DMG tested on a clean supported Apple Silicon Mac.
 - [ ] Debian package tested on a clean supported Linux installation.
 - [ ] AppImage tested on a clean supported Linux installation.
 - [ ] Sidecar startup, authenticated readiness, normal shutdown, forced-parent cleanup, port
@@ -43,15 +41,14 @@ Copy this checklist into the draft GitHub Release and replace every placeholder 
 
 ## Installation
 
-- Windows MSI: download the `.msi`, open it, and follow the installer prompts.
-- Windows NSIS: download the setup `.exe`, open it, and follow the installer prompts.
+- macOS: download the `.dmg`, open it, and drag Noto AI into Applications.
 - Debian/Ubuntu: `sudo apt install ./<noto-ai-package>.deb`
 - AppImage: `chmod +x <Noto-AI.AppImage>` and run it directly.
 
 ## Known limitations
 
-- Installers are unsigned until platform signing is configured; Windows and Linux may display
-  trust warnings.
+- Installers are unsigned until platform signing is configured; macOS and Linux may display trust
+  warnings.
 - Hosted transcription, notes providers, and Discord delivery require user-supplied credentials
   and are not exercised in CI.
 - `<add release-specific limitations>`

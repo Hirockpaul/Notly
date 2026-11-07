@@ -2,13 +2,13 @@
 
 The repository runs CI for every pull request into `main`, every push to `main`, and manual CI
 runs. CI checks the React/TypeScript frontend, Python backend, and Rust shell, then builds native
-Linux and Windows installers. The Python sidecar is frozen on the same operating system as its
+Linux and macOS installers. The Python sidecar is frozen on the same operating system as its
 installer; it is never cross-compiled.
 
 ## Day-to-day Git flow
 
 1. Update local `main`, then create a short-lived branch such as `feature/recording-status` or
-   `fix/windows-shutdown`.
+   `fix/desktop-shutdown`.
 2. Commit and push the branch. Open a pull request targeting `main`.
 3. Require the CI workflow to pass before review and merge. The `Native installers` jobs make
    downloadable workflow artifacts for smoke testing; they do not publish a GitHub Release.
@@ -57,12 +57,12 @@ cd ../backend && .venv/bin/python -m ruff check . && .venv/bin/python -m ruff fo
 cd ../frontend/src-tauri && cargo fmt --all -- --check && cargo clippy --all-targets --all-features --locked -- -D warnings && cargo test --all-features --locked
 ```
 
-On Windows, replace `.venv/bin/python` with `.venv/Scripts/python.exe`. Complete the product
-readiness checks in [release-checklist.md](release-checklist.md), including clean-machine
-installation and runtime checks on both operating systems. Before publishing the generated draft,
-complete the [draft-release validation checklist](release-draft-checklist.md). Automated builds do
-not prove microphone, hosted provider, credential-vault, signing, SmartScreen, or native Windows
-runtime behavior.
+Complete the product readiness checks in [release-checklist.md](release-checklist.md), including
+clean-machine installation and runtime checks on both operating systems. Before publishing the
+generated draft, complete the
+[draft-release validation checklist](release-draft-checklist.md). Automated builds do not prove
+microphone, hosted provider, credential-vault, signing, Gatekeeper, or native macOS runtime
+behavior.
 
 After the release pull request is merged and `main` is green, create and push an annotated tag at
 that exact commit:
@@ -77,8 +77,8 @@ git push origin v0.1.0
 
 Replace `0.1.0` with the manifest version. The tag must be exactly `v` followed by that version.
 The release workflow rejects a mismatch and runs the frontend, Python, and Rust checks on both
-native runners. It builds the Windows sidecar and required NSIS/MSI installers on Windows, and the
-Linux sidecar plus required Debian and AppImage installers on Ubuntu 22.04. The workflow only
+native runners. It builds the Apple Silicon sidecar and required DMG on macOS, and the Linux
+sidecar plus required Debian and AppImage installers on Ubuntu 22.04. The workflow only
 creates a draft GitHub Release after both platform jobs succeed and every required asset has been
 downloaded and checked. Review the generated notes, checklist, and installers, then publish the
 draft manually in GitHub.
