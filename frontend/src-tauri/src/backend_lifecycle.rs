@@ -40,7 +40,7 @@ struct OwnedChild {
 
 trait ManagedChild: Send {
     fn kill(self: Box<Self>) -> Result<(), String>;
-    #[cfg(test)]
+    #[cfg(all(test, target_os = "linux"))]
     fn pid(&self) -> u32;
 }
 
@@ -49,7 +49,7 @@ impl ManagedChild for CommandChild {
         CommandChild::kill(*self).map_err(|error| error.to_string())
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, target_os = "linux"))]
     fn pid(&self) -> u32 {
         CommandChild::pid(self)
     }
@@ -448,7 +448,7 @@ mod tests {
             Ok(())
         }
 
-        #[cfg(test)]
+        #[cfg(all(test, target_os = "linux"))]
         fn pid(&self) -> u32 {
             1
         }
