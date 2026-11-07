@@ -124,6 +124,18 @@ jobs:
           backend/.venv/bin/python -m ruff format --check backend
           backend/.venv/bin/python -m pytest backend
 
+      - name: Build native sidecar
+        run: ./scripts/build-sidecar.sh "${{ matrix.target }}"
+
+      - name: Verify native sidecar
+        shell: bash
+        run: |
+          sidecar="frontend/src-tauri/binaries/noto-backend-${{ matrix.target }}"
+          test -x "$sidecar"
+          backend/.venv/bin/pyi-archive_viewer -r -l "$sidecar" | grep -F "'app.main'"
+          backend/.venv/bin/pyi-archive_viewer -r -l "$sidecar" | grep -F "'app.parent_monitor'"
+          backend/.venv/bin/python -c 'import hashlib, pathlib, sys; print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())' "$sidecar"
+
       - name: Install Rust stable
         shell: bash
         run: |
@@ -137,18 +149,6 @@ jobs:
         run: |
           cargo fmt --all -- --check
           cargo clippy --all-targets --all-features --locked -- -D warnings
-
-      - name: Build native sidecar
-        run: ./scripts/build-sidecar.sh "${{ matrix.target }}"
-
-      - name: Verify native sidecar
-        shell: bash
-        run: |
-          sidecar="frontend/src-tauri/binaries/noto-backend-${{ matrix.target }}"
-          test -x "$sidecar"
-          backend/.venv/bin/pyi-archive_viewer -r -l "$sidecar" | grep -F "'app.main'"
-          backend/.venv/bin/pyi-archive_viewer -r -l "$sidecar" | grep -F "'app.parent_monitor'"
-          backend/.venv/bin/python -c 'import hashlib, pathlib, sys; print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())' "$sidecar"
 
       - name: Run Rust tests with the native sidecar
         working-directory: frontend/src-tauri
