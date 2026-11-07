@@ -167,9 +167,11 @@ async def test_service_rejects_empty_transcript() -> None:
         await service.generate("session", empty)
 
 
-def test_hosted_notes_configuration_requires_all_credentials() -> None:
+def test_hosted_notes_configuration_requires_all_credentials(monkeypatch) -> None:
+    for name in ("NOTO_NOTES_API_URL", "NOTO_NOTES_API_KEY", "NOTO_NOTES_MODEL"):
+        monkeypatch.delenv(name, raising=False)
     with pytest.raises(
         ValidationError,
         match="NOTO_NOTES_API_URL, NOTO_NOTES_API_KEY, NOTO_NOTES_MODEL",
     ):
-        Settings(notes_provider="openai_compatible")
+        Settings(notes_provider="openai_compatible", _env_file=None)

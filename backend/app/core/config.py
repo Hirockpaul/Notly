@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     app_name: str = "Noto AI Backend"
     api_version: str = "1.0.0"
     api_prefix: str = ""
+    backend_token: str = ""
     allowed_origins: tuple[str, ...] = (
         "http://localhost:1420",
         "http://127.0.0.1:1420",

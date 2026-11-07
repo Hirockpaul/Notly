@@ -12,5 +12,5 @@ Record the date, OS, build artifact, tester, and evidence for every performed it
 
 ## Known packaging gate
 
-The current Tauri configuration does **not** bundle or launch the Python FastAPI backend. `tauri build` can bundle the webview shell, but that artifact is not a self-contained production application and must not be released as stable. A Windows release needs a frozen, signed backend sidecar (for example, a tested PyInstaller executable), a Tauri `externalBin` declaration, lifecycle/startup health checks, and clean shutdown. Development continues to use a separately launched `uvicorn` server.
+The Linux Tauri configuration bundles and launches the frozen Python backend with authenticated readiness checks and clean shutdown. A Windows release still requires a Windows-built, signed and runtime-tested `noto-backend-x86_64-pc-windows-msvc.exe`; do not substitute the Linux artifact or claim Windows verification from a Linux build.
 

@@ -119,6 +119,8 @@ async def test_invalid_response_is_rejected() -> None:
         await provider(StubClient([object()])).transcribe(utterance())
 
 
-def test_missing_nvidia_configuration_is_actionable() -> None:
+def test_missing_nvidia_configuration_is_actionable(monkeypatch) -> None:
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    monkeypatch.delenv("NVIDIA_ASR_FUNCTION_ID", raising=False)
     with pytest.raises(ValidationError, match="NVIDIA_API_KEY, NVIDIA_ASR_FUNCTION_ID"):
-        Settings(transcription_provider="nvidia")
+        Settings(transcription_provider="nvidia", _env_file=None)
