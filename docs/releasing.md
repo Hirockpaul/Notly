@@ -2,7 +2,7 @@
 
 The repository runs CI for every pull request into `main`, every push to `main`, and manual CI
 runs. CI checks the React/TypeScript frontend, Python backend, and Rust shell, then builds native
-Linux and macOS installers. The Python sidecar is frozen on the same operating system as its
+Linux, Windows, and macOS installers. The Python sidecar is frozen on the same operating system as its
 installer; it is never cross-compiled.
 
 ## Day-to-day Git flow
@@ -58,11 +58,23 @@ cd ../frontend/src-tauri && cargo fmt --all -- --check && cargo clippy --all-tar
 ```
 
 Complete the product readiness checks in [release-checklist.md](release-checklist.md), including
-clean-machine installation and runtime checks on both operating systems. Before publishing the
+clean-machine installation and runtime checks on all three operating systems. Before publishing the
 generated draft, complete the
 [draft-release validation checklist](release-draft-checklist.md). Automated builds do not prove
-microphone, hosted provider, credential-vault, signing, Gatekeeper, or native macOS runtime
+microphone, hosted provider, credential-vault, reboot persistence, or native desktop runtime
 behavior.
+
+Tagged releases require these GitHub Actions secrets before packaging starts:
+
+- Windows: `WINDOWS_CERTIFICATE` (base64 PFX) and `WINDOWS_CERTIFICATE_PASSWORD`.
+- macOS certificate: `APPLE_CERTIFICATE` (base64 P12), `APPLE_CERTIFICATE_PASSWORD`,
+  `APPLE_SIGNING_IDENTITY`, and `KEYCHAIN_PASSWORD`.
+- macOS notarization: `APPLE_ID`, `APPLE_PASSWORD` (an app-specific password), and
+  `APPLE_TEAM_ID`.
+
+The native jobs import credentials only on their matching runner. Windows must pass Authenticode
+verification. macOS must pass strict `codesign`, Gatekeeper assessment, and notarization-ticket
+validation. Missing credentials fail the tagged release rather than publishing unsigned assets.
 
 After the release pull request is merged and `main` is green, create and push an annotated tag at
 that exact commit:
@@ -77,12 +89,13 @@ git push origin v0.1.0
 
 Replace `0.1.0` with the manifest version. The tag must be exactly `v` followed by that version.
 The release workflow rejects a mismatch and runs the frontend, Python, and Rust checks on both
-native runners. It builds the Apple Silicon sidecar and required DMG on macOS, and the Linux
-sidecar plus required Debian and AppImage installers on Ubuntu 22.04. The workflow only
-creates a draft GitHub Release after both platform jobs succeed and every required asset has been
+native runners. It builds the Apple Silicon sidecar and required DMG on macOS, the Windows sidecar
+and NSIS setup on Windows, and the Linux sidecar plus required Debian and AppImage installers on
+Ubuntu 22.04. The workflow only creates a draft GitHub Release after all platform jobs succeed,
+their signatures are verified, and every required asset has been
 downloaded and checked. Review the generated notes, checklist, and installers, then publish the
 draft manually in GitHub.
 
 If a release build fails, fix the issue through a new pull request and create a new version/tag.
-Do not move or reuse a published version tag. Code signing is not configured: the produced
-installers are unsigned until platform signing credentials and a signing policy are added.
+Do not move or reuse a published version tag. Branch CI packages remain suitable for internal
+testing; only the tagged release path requires production signing credentials.

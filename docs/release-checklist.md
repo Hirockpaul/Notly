@@ -8,9 +8,10 @@ Record the date, OS, build artifact, tester, and evidence for every performed it
 - SQLite: create/save/restart/rename/delete/delete-all, integrity, legacy localStorage migration.
 - Backup: create and parse, empty-database restore, merge, duplicate skip, invalid/future backup, interrupted restore, post-restore integrity.
 - Discord: configure/test/disconnect, short/long delivery, invalid/deleted webhook, network failure, rate limit.
-- Packaging: install/uninstall on clean Windows, launch without a development checkout, backend start/stop, app-data database persistence, clean shutdown.
+- Linux packaging: install/uninstall the `.deb`, launch the AppImage on a clean desktop, verify the bundled `appsink` plugin, microphone selection/live meter/recording, English and Hindi ASR, noise reduction, notifications, launch-at-startup after reboot, backend lifecycle, and persistence.
+- Windows packaging: install/uninstall the NSIS setup on clean Windows, verify Authenticode, microphone/notification/autostart behavior after reboot, backend lifecycle, and persistence.
+- macOS packaging: install the DMG on clean Apple Silicon, verify Gatekeeper and notarization, microphone permission/capture, notifications, login startup after reboot, backend lifecycle, and persistence.
 
-## Known packaging gate
+## Release gates
 
-The Linux Tauri configuration bundles and launches the frozen Python backend with authenticated readiness checks and clean shutdown. A Windows release still requires a Windows-built, signed and runtime-tested `noto-backend-x86_64-pc-windows-msvc.exe`; do not substitute the Linux artifact or claim Windows verification from a Linux build.
-
+The Linux AppImage bundles WebKitGTK's GStreamer media framework and CI verifies `usr/lib/gstreamer-1.0/libgstapp.so`, preventing the previous `appsink` warning from silently returning. Every platform freezes its Python sidecar on its native runner. Never substitute a sidecar from another operating system or claim real hardware/provider/reboot verification from CI.

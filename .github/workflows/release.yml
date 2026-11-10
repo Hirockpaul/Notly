@@ -40,6 +40,8 @@ jobs:
     with:
       expected-tag: ${{ github.ref_name }}
       retention-days: 30
+      require-signing: true
+    secrets: inherit
 
   publish:
     name: Publish GitHub Release
@@ -61,10 +63,15 @@ jobs:
           dmg=(release-assets/*.dmg)
           deb=(release-assets/*.deb)
           appimage=(release-assets/*.AppImage)
+          windows=(release-assets/*.exe)
           (( ${#dmg[@]} > 0 )) || { echo "Missing required macOS disk image" >&2; exit 1; }
           (( ${#deb[@]} > 0 )) || { echo "Missing required Debian installer" >&2; exit 1; }
           (( ${#appimage[@]} > 0 )) || { echo "Missing required AppImage" >&2; exit 1; }
-          echo "Required assets: ${#dmg[@]} DMG, ${#deb[@]} Debian, ${#appimage[@]} AppImage"
+          (( ${#windows[@]} > 0 )) || { echo "Missing required Windows installer" >&2; exit 1; }
+          echo "Required assets: ${#dmg[@]} DMG, ${#deb[@]} Debian, ${#appimage[@]} AppImage, ${#windows[@]} Windows installer"
+      - name: Create SHA-256 checksums
+        working-directory: release-assets
+        run: sha256sum -- * > SHA256SUMS
       - name: Publish release assets
         env:
           GH_TOKEN: ${{ github.token }}
