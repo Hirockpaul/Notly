@@ -13,8 +13,72 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  release-policy:
+    name: Select release policy
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    outputs:
+      mode: ${{ steps.policy.outputs.mode }}
+      artifact-suffix: ${{ steps.policy.outputs.artifact-suffix }}
+    steps:
+      - name: Select beta or production mode
+        id: policy
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta(\.[0-9A-Za-z-]+)*$ ]]; then
+            echo "mode=beta" >> "$GITHUB_OUTPUT"
+            echo "artifact-suffix=-unsigned-beta" >> "$GITHUB_OUTPUT"
+            echo "Unsigned beta release selected; signing credentials are optional and will not be used."
+            exit 0
+          fi
+
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Unsupported release tag '$GITHUB_REF_NAME'. Use vX.Y.Z-beta.N for an unsigned beta or vX.Y.Z for signed production." >&2
+            exit 1
+          fi
+
+          echo "mode=production" >> "$GITHUB_OUTPUT"
+          echo "artifact-suffix=-signed-production" >> "$GITHUB_OUTPUT"
+
+      - name: Validate production signing credentials
+        if: steps.policy.outputs.mode == 'production'
+        shell: bash
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          missing=()
+          required=(
+            WINDOWS_CERTIFICATE
+            WINDOWS_CERTIFICATE_PASSWORD
+            APPLE_CERTIFICATE
+            APPLE_CERTIFICATE_PASSWORD
+            KEYCHAIN_PASSWORD
+            APPLE_SIGNING_IDENTITY
+            APPLE_ID
+            APPLE_PASSWORD
+            APPLE_TEAM_ID
+          )
+          for name in "${required[@]}"; do
+            [[ -n "${!name:-}" ]] || missing+=("$name")
+          done
+          if (( ${#missing[@]} > 0 )); then
+            printf 'Signed production release %s cannot start. Configure these GitHub Actions secrets: %s\n' \
+              "$GITHUB_REF_NAME" "${missing[*]}" >&2
+            exit 1
+          fi
+          echo "Signed production release selected; all required signing credentials are configured."
+
   validate-tag:
     name: Validate release tag
+    needs: release-policy
     runs-on: ubuntu-22.04
     timeout-minutes: 5
     steps:
@@ -35,17 +99,18 @@ jobs:
 
   package:
     name: Build release installers
-    needs: validate-tag
+    needs: [release-policy, validate-tag]
     uses: ./.github/workflows/desktop-build.yml
     with:
       expected-tag: ${{ github.ref_name }}
       retention-days: 30
-      require-signing: true
+      require-signing: ${{ needs.release-policy.outputs.mode == 'production' }}
+      artifact-suffix: ${{ needs.release-policy.outputs.artifact-suffix }}
     secrets: inherit
 
   publish:
     name: Publish GitHub Release
-    needs: package
+    needs: [release-policy, package]
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     permissions:
@@ -64,11 +129,22 @@ jobs:
           deb=(release-assets/*.deb)
           appimage=(release-assets/*.AppImage)
           windows=(release-assets/*.exe)
+          msi=(release-assets/*.msi)
           (( ${#dmg[@]} > 0 )) || { echo "Missing required macOS disk image" >&2; exit 1; }
           (( ${#deb[@]} > 0 )) || { echo "Missing required Debian installer" >&2; exit 1; }
           (( ${#appimage[@]} > 0 )) || { echo "Missing required AppImage" >&2; exit 1; }
           (( ${#windows[@]} > 0 )) || { echo "Missing required Windows installer" >&2; exit 1; }
-          echo "Required assets: ${#dmg[@]} DMG, ${#deb[@]} Debian, ${#appimage[@]} AppImage, ${#windows[@]} Windows installer"
+          (( ${#msi[@]} > 0 )) || { echo "Missing required Windows MSI installer" >&2; exit 1; }
+          echo "Required assets: ${#dmg[@]} DMG, ${#deb[@]} Debian, ${#appimage[@]} AppImage, ${#windows[@]} EXE, ${#msi[@]} MSI"
+      - name: Label unsigned beta installers
+        if: needs.release-policy.outputs.mode == 'beta'
+        shell: bash
+        run: |
+          shopt -s nullglob
+          for asset in release-assets/*.{dmg,deb,AppImage,exe,msi}; do
+            extension="${asset##*.}"
+            mv -- "$asset" "${asset%.*}-unsigned-beta.${extension}"
+          done
       - name: Create SHA-256 checksums
         working-directory: release-assets
         run: sha256sum -- * > SHA256SUMS
@@ -77,8 +153,20 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          gh release create "$GITHUB_REF_NAME" release-assets/* \
-            --draft \
-            --verify-tag \
-            --generate-notes \
-            --title "Noto AI $GITHUB_REF_NAME"
+          args=(
+            "$GITHUB_REF_NAME"
+            release-assets/*
+            --draft
+            --verify-tag
+            --generate-notes
+          )
+          if [[ "${{ needs.release-policy.outputs.mode }}" == "beta" ]]; then
+            args+=(
+              --prerelease
+              --title "Noto AI $GITHUB_REF_NAME (Unsigned Beta)"
+              --notes "Unsigned beta build. Windows and macOS may display publisher or Gatekeeper warnings. Verify SHA256SUMS before installation."
+            )
+          else
+            args+=(--title "Noto AI $GITHUB_REF_NAME")
+          fi
+          gh release create "${args[@]}"

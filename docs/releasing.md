@@ -64,7 +64,17 @@ generated draft, complete the
 microphone, hosted provider, credential-vault, reboot persistence, or native desktop runtime
 behavior.
 
-Tagged releases require these GitHub Actions secrets before packaging starts:
+The release workflow supports two tag-driven modes:
+
+- **Unsigned beta:** use a prerelease version and matching tag such as `0.2.0-beta.1` and
+  `v0.2.0-beta.1`. It builds `.exe`, `.msi`, `.dmg`, `.AppImage`, and `.deb` installers without
+  reading or requiring signing secrets. The draft is marked as a GitHub prerelease, and installer
+  filenames and workflow artifacts include `unsigned-beta`.
+- **Signed production:** use a stable version and matching tag such as `0.2.0` and `v0.2.0`.
+  The release policy job validates every signing secret before native packaging begins. It refuses
+  to build or publish if any credential is missing.
+
+Signed production tags require these GitHub Actions secrets before packaging starts:
 
 - Windows: `WINDOWS_CERTIFICATE` (base64 PFX) and `WINDOWS_CERTIFICATE_PASSWORD`.
 - macOS certificate: `APPLE_CERTIFICATE` (base64 P12), `APPLE_CERTIFICATE_PASSWORD`,
@@ -74,10 +84,22 @@ Tagged releases require these GitHub Actions secrets before packaging starts:
 
 The native jobs import credentials only on their matching runner. Windows must pass Authenticode
 verification. macOS must pass strict `codesign`, Gatekeeper assessment, and notarization-ticket
-validation. Missing credentials fail the tagged release rather than publishing unsigned assets.
+validation. Missing credentials fail a production tag rather than publishing unsigned assets. They
+never fail an unsigned beta build, because beta mode skips certificate import, signing,
+Authenticode, Gatekeeper, and notarization steps.
 
 After the release pull request is merged and `main` is green, create and push an annotated tag at
-that exact commit:
+that exact commit. For an unsigned beta, set every manifest to the same prerelease version first:
+
+```sh
+git switch main
+git pull --ff-only origin main
+python scripts/check-version.py
+git tag -a v0.2.0-beta.1 -m "Noto AI v0.2.0-beta.1 unsigned beta"
+git push origin v0.2.0-beta.1
+```
+
+For a signed production release, use a stable version and tag:
 
 ```sh
 git switch main
@@ -87,15 +109,14 @@ git tag -a v0.1.0 -m "Noto AI v0.1.0"
 git push origin v0.1.0
 ```
 
-Replace `0.1.0` with the manifest version. The tag must be exactly `v` followed by that version.
-The release workflow rejects a mismatch and runs the frontend, Python, and Rust checks on both
-native runners. It builds the Apple Silicon sidecar and required DMG on macOS, the Windows sidecar
-and NSIS setup on Windows, and the Linux sidecar plus required Debian and AppImage installers on
-Ubuntu 22.04. The workflow only creates a draft GitHub Release after all platform jobs succeed,
-their signatures are verified, and every required asset has been
-downloaded and checked. Review the generated notes, checklist, and installers, then publish the
-draft manually in GitHub.
+Replace the example with the manifest version. The tag must be exactly `v` followed by that
+version. The release workflow rejects a mismatch and runs the frontend, Python, and Rust checks on
+the native runners. It builds the Apple Silicon sidecar and DMG on macOS, the Windows sidecar plus
+NSIS `.exe` and WiX `.msi` installers on Windows, and the Linux sidecar plus Debian and AppImage
+installers on Ubuntu 22.04. It only creates a draft GitHub Release after all platform jobs and
+required-asset checks succeed. Production signatures are additionally verified before upload.
+Review the generated notes, checklist, checksums, and installers, then publish the draft manually.
 
 If a release build fails, fix the issue through a new pull request and create a new version/tag.
 Do not move or reuse a published version tag. Branch CI packages remain suitable for internal
-testing; only the tagged release path requires production signing credentials.
+testing. Beta tags require no signing credentials; only stable production tags require them.
