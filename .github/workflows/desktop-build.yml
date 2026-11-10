@@ -288,11 +288,16 @@ jobs:
         working-directory: frontend
         run: npm run tauri:build -- --target "${{ matrix.target }}" --bundles appimage
 
-      - name: Build required macOS disk image
-        if: runner.os == 'macOS'
+      - name: Build required ad-hoc signed macOS disk image
+        if: runner.os == 'macOS' && !inputs.require-signing
+        working-directory: frontend
+        run: npm run tauri:build -- --target "${{ matrix.target }}" --bundles dmg
+
+      - name: Build required signed and notarized macOS disk image
+        if: runner.os == 'macOS' && inputs.require-signing
         working-directory: frontend
         env:
-          APPLE_SIGNING_IDENTITY: ${{ inputs.require-signing && secrets.APPLE_SIGNING_IDENTITY || '-' }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
