@@ -109,8 +109,15 @@ export class AudioBackendClient {
     this.timeoutMs = timeoutMs;
   }
 
-  async startSession(externalSignal?: AbortSignal): Promise<SpeechSessionStart> {
-    return this.request<SpeechSessionStart>("backend_start_session", undefined, externalSignal);
+  async startSession(
+    languageCode: "en-US" | "hi-IN" = "en-US",
+    externalSignal?: AbortSignal,
+  ): Promise<SpeechSessionStart> {
+    return this.request<SpeechSessionStart>(
+      "backend_start_session",
+      { languageCode },
+      externalSignal,
+    );
   }
 
   async finishSession(

@@ -47,8 +47,9 @@ class SpeechSessionSnapshot:
     result: PipelineResult
 
 
-def create_fake_pipeline(session_id: str) -> SpeechSessionPipeline:
+def create_fake_pipeline(session_id: str, language_code: str = "en-US") -> SpeechSessionPipeline:
     del session_id
+    del language_code
     return SpeechSessionPipeline(
         diarization=None,
         transcription=FakeTranscriptionProvider(text="Speech detected by the local test provider."),
@@ -57,16 +58,16 @@ def create_fake_pipeline(session_id: str) -> SpeechSessionPipeline:
     )
 
 
-def create_solo_pipeline(session_id: str) -> SpeechSessionPipeline:
+def create_solo_pipeline(session_id: str, language_code: str = "en-US") -> SpeechSessionPipeline:
     if settings.transcription_provider == "fake":
-        return create_fake_pipeline(session_id)
+        return create_fake_pipeline(session_id, language_code)
     transcription = NvidiaTranscriptionProvider(
         NvidiaAsrConfig(
             api_key=settings.nvidia_api_key,
             uri=settings.nvidia_riva_uri,
             function_id=settings.nvidia_asr_function_id,
             model=settings.nvidia_asr_model,
-            language_code=settings.nvidia_asr_language_code,
+            language_code=language_code,
             timeout_seconds=settings.nvidia_asr_timeout_seconds,
             max_retries=settings.nvidia_asr_max_retries,
         )
@@ -84,7 +85,7 @@ def create_solo_pipeline(session_id: str) -> SpeechSessionPipeline:
 class SpeechSessionManager:
     def __init__(
         self,
-        pipeline_factory: Callable[[str], SpeechSessionPipeline] = create_solo_pipeline,
+        pipeline_factory: Callable[[str, str], SpeechSessionPipeline] = create_solo_pipeline,
         max_completed_sessions: int = MAX_COMPLETED_SESSIONS,
         session_idle_timeout_seconds: float = SESSION_IDLE_TIMEOUT_SECONDS,
     ) -> None:
@@ -98,9 +99,9 @@ class SpeechSessionManager:
     def active_session_count(self) -> int:
         return len(self._sessions)
 
-    async def start(self) -> SpeechSession:
+    async def start(self, language_code: str = "en-US") -> SpeechSession:
         session_id = str(uuid4())
-        pipeline = self._pipeline_factory(session_id)
+        pipeline = self._pipeline_factory(session_id, language_code)
         session = SpeechSession(session_id=session_id, pipeline=pipeline)
         await pipeline.start(session_id)
         self._sessions[session_id] = session

@@ -113,7 +113,8 @@ class FailingTranscription:
 
 @pytest.mark.asyncio
 async def test_manager_reports_provider_failure_and_cleans_resources() -> None:
-    def factory(session_id: str) -> SpeechSessionPipeline:
+    def factory(session_id: str, language_code: str) -> SpeechSessionPipeline:
+        assert language_code == "en-US"
         return SpeechSessionPipeline(
             FakeDiarizationProvider(
                 {

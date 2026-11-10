@@ -1,7 +1,6 @@
 import {
   Bell,
   Check,
-  ChevronDown,
   Database,
   Download,
   Mic,
@@ -30,6 +29,13 @@ import {
   testDiscord,
 } from "../../services/desktop-integrations";
 import type { DiscordDeliveryActivity } from "../../services/desktop-integrations";
+import { useAudioInputPreview } from "../../hooks/useAudioInputPreview";
+import { getAppPreferences, updateAppPreferences } from "../../services/app-preferences";
+import {
+  ensureNotificationPermission,
+  getLaunchAtStartup,
+  setLaunchAtStartup as updateLaunchAtStartup,
+} from "../../services/native-preferences";
 
 interface SettingRowProps {
   title: string;
@@ -53,9 +59,11 @@ function SettingRow({ title, description, children }: SettingRowProps) {
 }
 
 export function SettingsPage() {
-  const [noiseReduction, setNoiseReduction] = useState(true);
+  const [preferences, setPreferences] = useState(getAppPreferences);
+  const { microphoneDeviceId, noiseReduction, noteNotifications: notifications } = preferences;
   const [launchAtStartup, setLaunchAtStartup] = useState(false);
-  const [notifications, setNotifications] = useState(true);
+  const [preferenceError, setPreferenceError] = useState<string | null>(null);
+  const microphone = useAudioInputPreview(microphoneDeviceId, noiseReduction);
   const [discordState, setDiscordState] = useState<DiscordUiState>("not_configured");
   const [discordConfigured, setDiscordConfigured] = useState(false);
   const [showDiscordForm, setShowDiscordForm] = useState(false);
@@ -79,6 +87,20 @@ export function SettingsPage() {
         error instanceof Error ? error.message : "Storage statistics are unavailable.",
       );
     }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void getLaunchAtStartup()
+      .then((enabled) => {
+        if (active) setLaunchAtStartup(enabled);
+      })
+      .catch(() => {
+        if (active) setPreferenceError("Launch-at-startup status is unavailable.");
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -280,25 +302,49 @@ export function SettingsPage() {
             </div>
           </div>
           <SettingRow description="System default input device" title="Input source">
-            <button
-              className="flex items-center gap-2 rounded-[9px] border border-[#383838] bg-[#2D2D2D] px-3 py-2 text-xs text-[#A3A3A3] transition-colors duration-150 hover:border-[#4A4A4A] hover:text-[#F5F5F5] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B82F6]"
-              type="button"
+            <select
+              className="rounded-[9px] border border-[#383838] bg-[#2D2D2D] px-3 py-2 text-xs text-[#F5F5F5] outline-none focus:border-[#3B82F6]"
+              onChange={(event) => {
+                const next = updateAppPreferences({ microphoneDeviceId: event.target.value });
+                setPreferences(next);
+              }}
+              onFocus={() => void microphone.refreshDevices()}
+              value={microphoneDeviceId}
             >
-              Built-in Microphone <ChevronDown size={14} />
-            </button>
+              <option value="default">System default microphone</option>
+              {microphone.devices
+                .filter((device) => device.deviceId !== "default")
+                .map((device) => (
+                  <option key={device.deviceId} value={device.deviceId}>
+                    {device.label}
+                  </option>
+                ))}
+            </select>
           </SettingRow>
-          <SettingRow description="Preview of your current input level" title="Input level">
-            <div
-              className="flex h-8 items-center gap-1 rounded-lg bg-[#202020] px-2"
-              aria-label="Input level preview"
-            >
-              {[30, 55, 74, 48, 66, 38, 58, 44].map((height, index) => (
-                <span
-                  className="w-1 rounded-full bg-[#3B82F6]/80"
-                  key={index}
-                  style={{ height: `${height}%` }}
-                />
-              ))}
+          <SettingRow
+            description={microphone.error ?? "Start a private preview to verify the selected input"}
+            title="Input level"
+          >
+            <div className="flex items-center gap-2">
+              <div
+                className="flex h-8 items-center gap-1 rounded-lg bg-[#202020] px-2"
+                aria-label="Live input level"
+              >
+                {[30, 55, 74, 48, 66, 38, 58, 44].map((height, index) => (
+                  <span
+                    className="w-1 rounded-full bg-[#3B82F6]/80"
+                    key={index}
+                    style={{ height: `${Math.max(8, height * microphone.level)}%` }}
+                  />
+                ))}
+              </div>
+              <Button
+                onClick={() => void microphone.startPreview()}
+                size="small"
+                variant="secondary"
+              >
+                Test input
+              </Button>
             </div>
           </SettingRow>
         </Card>
@@ -320,7 +366,9 @@ export function SettingsPage() {
             <Toggle
               checked={noiseReduction}
               label="Toggle noise reduction"
-              onChange={setNoiseReduction}
+              onChange={(enabled) =>
+                setPreferences(updateAppPreferences({ noiseReduction: enabled }))
+              }
             />
           </SettingRow>
         </Card>
@@ -476,7 +524,12 @@ export function SettingsPage() {
             <Toggle
               checked={launchAtStartup}
               label="Toggle launch at startup"
-              onChange={setLaunchAtStartup}
+              onChange={(enabled) => {
+                setPreferenceError(null);
+                void updateLaunchAtStartup(enabled)
+                  .then(() => setLaunchAtStartup(enabled))
+                  .catch(() => setPreferenceError("Could not update launch-at-startup."));
+              }}
             />
           </SettingRow>
           <SettingRow
@@ -486,9 +539,24 @@ export function SettingsPage() {
             <Toggle
               checked={notifications}
               label="Toggle note notifications"
-              onChange={setNotifications}
+              onChange={(enabled) => {
+                setPreferenceError(null);
+                if (!enabled) {
+                  setPreferences(updateAppPreferences({ noteNotifications: false }));
+                  return;
+                }
+                void ensureNotificationPermission()
+                  .then((granted) => {
+                    if (!granted) throw new Error("permission denied");
+                    setPreferences(updateAppPreferences({ noteNotifications: true }));
+                  })
+                  .catch(() => setPreferenceError("Notification permission was not granted."));
+              }}
             />
           </SettingRow>
+          {preferenceError ? (
+            <p className="mt-2 text-xs text-[#EF4444]">{preferenceError}</p>
+          ) : null}
         </Card>
       </div>
 

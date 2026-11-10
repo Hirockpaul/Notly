@@ -49,7 +49,7 @@ describe("AudioBackendClient Tauri bridge", () => {
       });
     });
     const client = new AudioBackendClient({ invokeImplementation });
-    await client.startSession();
+    await client.startSession("hi-IN");
     await client.getSessionTranscript("session-1");
     await client.finishSession("session-1");
     expect(
@@ -59,6 +59,10 @@ describe("AudioBackendClient Tauri bridge", () => {
           (command) => !["backend_register_request", "backend_cancel_request"].includes(command),
         ),
     ).toEqual(["backend_start_session", "backend_get_transcript", "backend_finish_session"]);
+    expect(invokeImplementation).toHaveBeenCalledWith(
+      "backend_start_session",
+      expect.objectContaining({ languageCode: "hi-IN" }),
+    );
   });
 
   it("sends PCM bytes and metadata through IPC", async () => {
@@ -155,7 +159,7 @@ describe("AudioBackendClient Tauri bridge", () => {
     controller.abort();
     const invokeImplementation = vi.fn(() => new Promise(() => undefined));
     const client = new AudioBackendClient({ invokeImplementation });
-    await expect(client.startSession(controller.signal)).rejects.toMatchObject({
+    await expect(client.startSession("en-US", controller.signal)).rejects.toMatchObject({
       code: "cancelled",
     });
     expect(invokeImplementation).not.toHaveBeenCalled();
@@ -172,7 +176,7 @@ describe("AudioBackendClient Tauri bridge", () => {
     });
     const controller = new AbortController();
     const client = new AudioBackendClient({ invokeImplementation });
-    const request = client.startSession(controller.signal);
+    const request = client.startSession("en-US", controller.signal);
     controller.abort();
     await expect(request).rejects.toMatchObject({ code: "cancelled" });
 

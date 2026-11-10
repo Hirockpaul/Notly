@@ -65,25 +65,28 @@ export function useAudioIngestion() {
     pollingTimer.current = globalThis.setInterval(() => void poll(), POLL_INTERVAL_MS);
   }, [poll, stopPolling]);
 
-  const startSession = useCallback(async () => {
-    setError(null);
-    setResult(null);
-    setSegments([]);
-    setUtteranceErrors([]);
-    setPendingUtterances(0);
-    setStatus("starting");
-    try {
-      const sessionId = await transport.startSession();
-      setStatus("detecting");
-      startPolling();
-      return sessionId;
-    } catch (startError) {
-      const backendError = toBackendError(startError);
-      setError(backendError);
-      setStatus("error");
-      throw backendError;
-    }
-  }, [startPolling, transport]);
+  const startSession = useCallback(
+    async (languageCode: "en-US" | "hi-IN" = "en-US") => {
+      setError(null);
+      setResult(null);
+      setSegments([]);
+      setUtteranceErrors([]);
+      setPendingUtterances(0);
+      setStatus("starting");
+      try {
+        const sessionId = await transport.startSession(languageCode);
+        setStatus("detecting");
+        startPolling();
+        return sessionId;
+      } catch (startError) {
+        const backendError = toBackendError(startError);
+        setError(backendError);
+        setStatus("error");
+        throw backendError;
+      }
+    },
+    [startPolling, transport],
+  );
 
   const enqueue = useCallback((chunk: PcmAudioChunk) => transport.enqueue(chunk), [transport]);
   const pause = useCallback(() => transport.pause(), [transport]);

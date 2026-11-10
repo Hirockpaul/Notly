@@ -9,11 +9,17 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_notification::init())
         .on_permission_request(|_, kind| match kind {
             tauri::webview::PermissionKind::Microphone => tauri::webview::PermissionResponse::Allow,
             _ => tauri::webview::PermissionResponse::Default,
         })
         .setup(|app| {
+            #[cfg(desktop)]
+            app.handle().plugin(tauri_plugin_autostart::init(
+                tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+                None,
+            ))?;
             let database = storage::Database::open(&app.path().app_data_dir()?)?;
             app.manage(database);
             app.manage(backend_bridge::BackendBridge::new()?);
