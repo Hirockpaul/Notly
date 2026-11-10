@@ -18,6 +18,11 @@ on:
         required: false
         type: boolean
         default: false
+      artifact-suffix:
+        description: Suffix appended to uploaded workflow artifact names
+        required: false
+        type: string
+        default: ""
     secrets:
       WINDOWS_CERTIFICATE:
         required: false
@@ -207,6 +212,7 @@ jobs:
           rustup target add "${{ matrix.target }}"
 
       - name: Require release signing credentials
+        id: signing
         if: inputs.require-signing
         shell: bash
         env:
@@ -220,21 +226,31 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          missing=()
           if [[ "${{ runner.os }}" == "Windows" ]]; then
-            test -n "$WINDOWS_CERTIFICATE"
-            test -n "$WINDOWS_CERTIFICATE_PASSWORD"
+            [[ -n "$WINDOWS_CERTIFICATE" ]] || missing+=(WINDOWS_CERTIFICATE)
+            [[ -n "$WINDOWS_CERTIFICATE_PASSWORD" ]] || missing+=(WINDOWS_CERTIFICATE_PASSWORD)
           elif [[ "${{ runner.os }}" == "macOS" ]]; then
-            test -n "$APPLE_CERTIFICATE"
-            test -n "$APPLE_CERTIFICATE_PASSWORD"
-            test -n "$KEYCHAIN_PASSWORD"
-            test -n "$APPLE_SIGNING_IDENTITY"
-            test -n "$APPLE_ID"
-            test -n "$APPLE_PASSWORD"
-            test -n "$APPLE_TEAM_ID"
+            [[ -n "$APPLE_CERTIFICATE" ]] || missing+=(APPLE_CERTIFICATE)
+            [[ -n "$APPLE_CERTIFICATE_PASSWORD" ]] || missing+=(APPLE_CERTIFICATE_PASSWORD)
+            [[ -n "$KEYCHAIN_PASSWORD" ]] || missing+=(KEYCHAIN_PASSWORD)
+            [[ -n "$APPLE_SIGNING_IDENTITY" ]] || missing+=(APPLE_SIGNING_IDENTITY)
+            [[ -n "$APPLE_ID" ]] || missing+=(APPLE_ID)
+            [[ -n "$APPLE_PASSWORD" ]] || missing+=(APPLE_PASSWORD)
+            [[ -n "$APPLE_TEAM_ID" ]] || missing+=(APPLE_TEAM_ID)
+          fi
+          if (( ${#missing[@]} > 0 )); then
+            printf 'Production signing is required, but these GitHub Actions secrets are missing: %s\n' "${missing[*]}" >&2
+            exit 1
+          fi
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            echo "windows=true" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ runner.os }}" == "macOS" ]]; then
+            echo "apple=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Import Windows signing certificate
-        if: runner.os == 'Windows' && inputs.require-signing
+        if: runner.os == 'Windows' && steps.signing.outputs.windows == 'true'
         shell: pwsh
         env:
           WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
@@ -248,7 +264,7 @@ jobs:
           $config | ConvertTo-Json -Depth 4 | Set-Content frontend/src-tauri/tauri.release.conf.json
 
       - name: Import Apple Developer ID certificate
-        if: runner.os == 'macOS' && inputs.require-signing
+        if: runner.os == 'macOS' && steps.signing.outputs.apple == 'true'
         shell: bash
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -288,13 +304,13 @@ jobs:
         working-directory: frontend
         run: npm run tauri:build -- --target "${{ matrix.target }}" --bundles appimage
 
-      - name: Build required ad-hoc signed macOS disk image
+      - name: Build required unsigned macOS disk image
         if: runner.os == 'macOS' && !inputs.require-signing
         working-directory: frontend
-        run: npm run tauri:build -- --target "${{ matrix.target }}" --bundles dmg
+        run: npm run tauri:build -- --target "${{ matrix.target }}" --bundles dmg --no-sign
 
       - name: Build required signed and notarized macOS disk image
-        if: runner.os == 'macOS' && inputs.require-signing
+        if: runner.os == 'macOS' && steps.signing.outputs.apple == 'true'
         working-directory: frontend
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
@@ -306,12 +322,12 @@ jobs:
       - name: Build required unsigned Windows installer
         if: runner.os == 'Windows' && !inputs.require-signing
         working-directory: frontend
-        run: npm run tauri:build -- --target "${{ matrix.target }}" --bundles nsis
+        run: npm run tauri:build -- --target "${{ matrix.target }}" --bundles nsis,msi --no-sign
 
       - name: Build required signed Windows installer
-        if: runner.os == 'Windows' && inputs.require-signing
+        if: runner.os == 'Windows' && steps.signing.outputs.windows == 'true'
         working-directory: frontend
-        run: npm run tauri:build -- --target "${{ matrix.target }}" --bundles nsis --config src-tauri/tauri.release.conf.json
+        run: npm run tauri:build -- --target "${{ matrix.target }}" --bundles nsis,msi --config src-tauri/tauri.release.conf.json
 
       - name: Verify Linux installer outputs
         if: runner.os == 'Linux'
@@ -338,7 +354,7 @@ jobs:
           compgen -G 'frontend/src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg' >/dev/null
 
       - name: Verify macOS signature and notarization
-        if: runner.os == 'macOS' && inputs.require-signing
+        if: runner.os == 'macOS' && steps.signing.outputs.apple == 'true'
         shell: bash
         run: |
           app=(frontend/src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app)
@@ -351,14 +367,19 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $installers = @(Get-ChildItem "frontend/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe")
-          if ($installers.Count -eq 0) { throw "Missing required Windows NSIS installer" }
+          $executables = @(Get-ChildItem "frontend/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe")
+          $packages = @(Get-ChildItem "frontend/src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi")
+          if ($executables.Count -eq 0) { throw "Missing required Windows NSIS installer" }
+          if ($packages.Count -eq 0) { throw "Missing required Windows MSI installer" }
 
       - name: Verify Windows Authenticode signature
-        if: runner.os == 'Windows' && inputs.require-signing
+        if: runner.os == 'Windows' && steps.signing.outputs.windows == 'true'
         shell: pwsh
         run: |
-          $installers = @(Get-ChildItem "frontend/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe")
+          $installers = @(
+            Get-ChildItem "frontend/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe"
+            Get-ChildItem "frontend/src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi"
+          )
           foreach ($installer in $installers) {
             $signature = Get-AuthenticodeSignature $installer.FullName
             if ($signature.Status -ne "Valid") { throw "Invalid signature on $($installer.Name): $($signature.Status)" }
@@ -368,7 +389,7 @@ jobs:
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: ${{ matrix.artifact }}
+          name: ${{ matrix.artifact }}${{ inputs.artifact-suffix }}
           path: |
             frontend/src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb
             frontend/src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
@@ -379,7 +400,7 @@ jobs:
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: ${{ matrix.artifact }}
+          name: ${{ matrix.artifact }}${{ inputs.artifact-suffix }}
           path: frontend/src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
           if-no-files-found: error
           retention-days: ${{ inputs.retention-days }}
@@ -388,7 +409,9 @@ jobs:
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: ${{ matrix.artifact }}
-          path: frontend/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
+          name: ${{ matrix.artifact }}${{ inputs.artifact-suffix }}
+          path: |
+            frontend/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
+            frontend/src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi
           if-no-files-found: error
           retention-days: ${{ inputs.retention-days }}
