@@ -3,30 +3,39 @@
 Noto AI is a Tauri desktop recorder with local SQLite transcripts and structured notes. Backups and optional manual Discord delivery are available from Settings; see [backup and restore](docs/backup-and-restore.md), [Discord integration](docs/discord-integration.md), the [CI and release guide](docs/releasing.md), and the [release checklist](docs/release-checklist.md).
 
 > Release status: native CI packages the platform-specific Python backend with the desktop app.
-> Linux, Windows, and macOS installers are built in native CI jobs. Tagged releases require
-> Windows Authenticode signing plus macOS Developer ID signing and notarization; clean-machine
-> runtime acceptance is still required before publishing the generated draft.
+> Linux, Windows, and macOS installers are built in native CI jobs. Beta releases are currently
+> unsigned; production releases require Windows Authenticode signing plus macOS Developer ID
+> signing and notarization. Clean-machine runtime acceptance is still required.
 
 Noto AI is a local desktop recorder built with Tauri 2, React, TypeScript, Vite, Rust, and a local
 FastAPI backend. The current product mode is **Solo Mode**: one user records microphone audio and
 receives a timestamped transcript.
 
-## Install Noto AI
+## Download and install Noto AI
 
-Until a public GitHub Release is published, signed-in GitHub users can download installers from a
-successful [CI workflow run](https://github.com/Hirockpaul/Notly/actions). Open the run, scroll to
-**Artifacts**, and download the package for your system. Workflow artifacts expire, so the GitHub
-Releases page will become the preferred download location after the first release is published.
+1. Open the [GitHub Releases page](https://github.com/Hirockpaul/Notly/releases).
+2. Open the latest release and expand **Assets** if the files are hidden.
+3. Download the installer for your operating system using the instructions below.
+
+Releases whose version contains `-beta.` are testing releases. Their installer filenames end in
+`-unsigned-beta`, and Windows or macOS may display an unknown-publisher warning. Stable production
+releases use a version such as `v1.0.0` and will only be published after their installers have been
+signed and verified.
+
+If the Releases page is empty, signed-in repository users can download a temporary build from a
+successful [GitHub Actions run](https://github.com/Hirockpaul/Notly/actions): open the run, scroll to
+**Artifacts**, and download and extract the package for the required system. Actions artifacts
+expire and are intended for testing rather than normal distribution.
 
 ### Linux x86_64
 
-Download and extract `noto-ai-linux-x86_64`. On Debian or Ubuntu, install the included `.deb`:
+Download the `.deb` on Debian or Ubuntu, open a terminal in its download directory, and install it:
 
 ```sh
 sudo apt install ./*.deb
 ```
 
-Alternatively, run the AppImage:
+On another x86_64 Linux distribution, download the `.AppImage`, make it executable, and run it:
 
 ```sh
 chmod +x ./*.AppImage
@@ -35,18 +44,18 @@ chmod +x ./*.AppImage
 
 ### macOS Apple Silicon
 
-Download and extract `noto-ai-macos-aarch64`, open the included `.dmg`, and drag Noto AI into the
-**Applications** folder.
-
-Branch CI uses an ad-hoc macOS signature for internal testing. Tagged releases use a verified
-Developer ID signature and notarization ticket.
+Download the `.dmg`, open it, and drag Noto AI into the **Applications** folder. This build currently
+targets Apple Silicon Macs (M1 or newer). An unsigned beta may require Control-clicking Noto AI,
+selecting **Open**, and confirming **Open** the first time it is launched.
 
 ### Windows x86_64
 
-Download and extract `noto-ai-windows-x86_64`, then run the included NSIS setup executable.
+Download either the `.exe` setup program or the `.msi` installer and run it. Both target 64-bit
+Windows. An unsigned beta may trigger Microsoft Defender SmartScreen; verify that the file came
+from this repository's Releases page before choosing **More info** and **Run anyway**.
 
-Only download artifacts produced by this repository. Branch CI artifacts may be unsigned or
-ad-hoc signed for testing. Tagged release artifacts pass mandatory platform-signature checks.
+Only download artifacts produced by this repository. Unsigned beta and Actions artifacts are for
+testing. Stable production releases pass mandatory platform-signature checks.
 
 ## Solo Mode architecture
 
