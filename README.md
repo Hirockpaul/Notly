@@ -1,12 +1,52 @@
 # Noto AI
 
-Noto AI is a Tauri desktop recorder with local SQLite transcripts and structured notes. Backups and optional manual Discord delivery are available from Settings; see [backup and restore](docs/backup-and-restore.md), [Discord integration](docs/discord-integration.md), and the [release checklist](docs/release-checklist.md).
+Noto AI is a Tauri desktop recorder with local SQLite transcripts and structured notes. Backups and optional manual Discord delivery are available from Settings; see [backup and restore](docs/backup-and-restore.md), [Discord integration](docs/discord-integration.md), the [CI and release guide](docs/releasing.md), and the [release checklist](docs/release-checklist.md).
 
-> Release status: the desktop shell is not yet self-contained because the Python backend is not bundled or launched by Tauri. See the packaging gate in the release checklist before distributing an installer.
+> Release status: native CI packages the platform-specific Python backend with the desktop app.
+> Linux, Windows, and macOS installers are built in native CI jobs. Tagged releases require
+> Windows Authenticode signing plus macOS Developer ID signing and notarization; clean-machine
+> runtime acceptance is still required before publishing the generated draft.
 
 Noto AI is a local desktop recorder built with Tauri 2, React, TypeScript, Vite, Rust, and a local
 FastAPI backend. The current product mode is **Solo Mode**: one user records microphone audio and
 receives a timestamped transcript.
+
+## Install Noto AI
+
+Until a public GitHub Release is published, signed-in GitHub users can download installers from a
+successful [CI workflow run](https://github.com/Hirockpaul/Notly/actions). Open the run, scroll to
+**Artifacts**, and download the package for your system. Workflow artifacts expire, so the GitHub
+Releases page will become the preferred download location after the first release is published.
+
+### Linux x86_64
+
+Download and extract `noto-ai-linux-x86_64`. On Debian or Ubuntu, install the included `.deb`:
+
+```sh
+sudo apt install ./*.deb
+```
+
+Alternatively, run the AppImage:
+
+```sh
+chmod +x ./*.AppImage
+./*.AppImage
+```
+
+### macOS Apple Silicon
+
+Download and extract `noto-ai-macos-aarch64`, open the included `.dmg`, and drag Noto AI into the
+**Applications** folder.
+
+Branch CI uses an ad-hoc macOS signature for internal testing. Tagged releases use a verified
+Developer ID signature and notarization ticket.
+
+### Windows x86_64
+
+Download and extract `noto-ai-windows-x86_64`, then run the included NSIS setup executable.
+
+Only download artifacts produced by this repository. Branch CI artifacts may be unsigned or
+ad-hoc signed for testing. Tagged release artifacts pass mandatory platform-signature checks.
 
 ## Solo Mode architecture
 

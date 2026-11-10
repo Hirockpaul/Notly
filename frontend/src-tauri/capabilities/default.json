@@ -3,5 +3,13 @@
   "identifier": "default",
   "description": "Baseline capability for the main Noto AI window.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-close",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-start-dragging",
+    "autostart:default",
+    "notification:default"
+  ]
 }

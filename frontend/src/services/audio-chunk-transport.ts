@@ -32,9 +32,9 @@ export class AudioChunkTransport {
     this.onError = onError;
   }
 
-  async startSession(): Promise<string> {
+  async startSession(languageCode: "en-US" | "hi-IN" = "en-US"): Promise<string> {
     this.dispose();
-    const started = await this.client.startSession();
+    const started = await this.client.startSession(languageCode);
     this.sessionId = started.sessionId;
     this.accepting = true;
     this.failed = false;

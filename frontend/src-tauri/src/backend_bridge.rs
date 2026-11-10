@@ -307,7 +307,13 @@ pub async fn backend_start_session(
     lifecycle: State<'_, crate::backend_lifecycle::BackendLifecycle>,
     request_id: String,
     registration_id: String,
+    language_code: String,
 ) -> Result<Value, BackendCommandError> {
+    if !matches!(language_code.as_str(), "en-US" | "hi-IN") {
+        return Err(BackendCommandError::invalid(
+            "Unsupported transcription language.",
+        ));
+    }
     let connection = ready(&lifecycle)?;
     state
         .json(
@@ -318,7 +324,7 @@ pub async fn backend_start_session(
             },
             reqwest::Method::POST,
             "/api/sessions/start",
-            None,
+            Some(serde_json::json!({ "languageCode": language_code })),
             Duration::from_secs(4),
         )
         .await

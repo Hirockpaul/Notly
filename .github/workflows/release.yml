@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate-tag:
+    name: Validate release tag
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out triggering tag with full history
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+      - name: Require tagged commit to be contained in main
+        shell: bash
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          tagged_commit="$(git rev-parse "${GITHUB_SHA}^{commit}")"
+          if ! git merge-base --is-ancestor "$tagged_commit" refs/remotes/origin/main; then
+            echo "Release tag $GITHUB_REF_NAME does not point to a commit contained in origin/main." >&2
+            exit 1
+          fi
+
+  package:
+    name: Build release installers
+    needs: validate-tag
+    uses: ./.github/workflows/desktop-build.yml
+    with:
+      expected-tag: ${{ github.ref_name }}
+      retention-days: 30
+      require-signing: true
+    secrets: inherit
+
+  publish:
+    name: Publish GitHub Release
+    needs: package
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download installers
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Verify required release assets
+        shell: bash
+        run: |
+          shopt -s nullglob
+          dmg=(release-assets/*.dmg)
+          deb=(release-assets/*.deb)
+          appimage=(release-assets/*.AppImage)
+          windows=(release-assets/*.exe)
+          (( ${#dmg[@]} > 0 )) || { echo "Missing required macOS disk image" >&2; exit 1; }
+          (( ${#deb[@]} > 0 )) || { echo "Missing required Debian installer" >&2; exit 1; }
+          (( ${#appimage[@]} > 0 )) || { echo "Missing required AppImage" >&2; exit 1; }
+          (( ${#windows[@]} > 0 )) || { echo "Missing required Windows installer" >&2; exit 1; }
+          echo "Required assets: ${#dmg[@]} DMG, ${#deb[@]} Debian, ${#appimage[@]} AppImage, ${#windows[@]} Windows installer"
+      - name: Create SHA-256 checksums
+        working-directory: release-assets
+        run: sha256sum -- * > SHA256SUMS
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release-assets/* \
+            --draft \
+            --verify-tag \
+            --generate-notes \
+            --title "Noto AI $GITHUB_REF_NAME"

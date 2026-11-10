@@ -33,6 +33,10 @@ class StartSessionResponse(BaseModel):
     audioFormat: AudioFormat = AudioFormat()
 
 
+class StartSessionRequest(BaseModel):
+    languageCode: Literal["en-US", "hi-IN"] = "en-US"
+
+
 class UtteranceError(BaseModel):
     utteranceId: str
     message: str
@@ -64,8 +68,10 @@ class GenerateNotesResponse(BaseModel):
 
 
 @router.post("/start", response_model=StartSessionResponse, status_code=status.HTTP_201_CREATED)
-async def start_session() -> StartSessionResponse:
-    session = await speech_session_manager.start()
+async def start_session(
+    request: StartSessionRequest | None = None,
+) -> StartSessionResponse:
+    session = await speech_session_manager.start(request.languageCode if request else "en-US")
     return StartSessionResponse(sessionId=session.session_id)
 
 

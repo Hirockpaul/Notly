@@ -7,6 +7,7 @@ import type {
   MicrophoneStatus,
   PcmAudioChunk,
 } from "../types/audio";
+import { getAppPreferences, updateAppPreferences } from "../services/app-preferences";
 
 interface UseMicrophoneOptions {
   onAudioChunk?: (chunk: PcmAudioChunk) => void;
@@ -15,7 +16,9 @@ interface UseMicrophoneOptions {
 export function useMicrophone({ onAudioChunk }: UseMicrophoneOptions = {}) {
   const [status, setStatus] = useState<MicrophoneStatus>("idle");
   const [devices, setDevices] = useState<AudioInputDevice[]>([]);
-  const [selectedDeviceId, setSelectedDeviceId] = useState("default");
+  const [selectedDeviceId, setSelectedDeviceIdState] = useState(
+    () => getAppPreferences().microphoneDeviceId,
+  );
   const [activeDeviceLabel, setActiveDeviceLabel] = useState("No microphone selected");
   const [audioLevel, setAudioLevel] = useState(0);
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -56,7 +59,7 @@ export function useMicrophone({ onAudioChunk }: UseMicrophoneOptions = {}) {
           label: device.label || `Microphone ${index + 1}`,
         })),
       );
-      setSelectedDeviceId((current) =>
+      setSelectedDeviceIdState((current) =>
         current === "default" || microphones.some((device) => device.deviceId === current)
           ? current
           : "default",
@@ -125,7 +128,7 @@ export function useMicrophone({ onAudioChunk }: UseMicrophoneOptions = {}) {
     sessionRef.current = session;
 
     try {
-      const track = await session.start(selectedDeviceId);
+      const track = await session.start(selectedDeviceId, getAppPreferences().noiseReduction);
       setActiveDeviceLabel(track.label || "Active microphone");
       setStatus("recording");
       startTimer();
@@ -175,6 +178,11 @@ export function useMicrophone({ onAudioChunk }: UseMicrophoneOptions = {}) {
       void sessionRef.current?.stop(false);
     };
   }, [stopTimer]);
+
+  const setSelectedDeviceId = useCallback((deviceId: string) => {
+    setSelectedDeviceIdState(deviceId);
+    updateAppPreferences({ microphoneDeviceId: deviceId });
+  }, []);
 
   return {
     activeDeviceLabel,

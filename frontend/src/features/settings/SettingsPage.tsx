@@ -1,11 +1,9 @@
 import {
   Bell,
-  Bot,
   Check,
-  ChevronDown,
   Database,
   Download,
-  Mic2,
+  Mic,
   SlidersHorizontal,
   Trash2,
   Upload,
@@ -17,6 +15,7 @@ import type { ReactNode } from "react";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { Toggle } from "../../components/ui/Toggle";
+import { DiscordIcon } from "../../components/icons/DiscordIcon";
 import { deleteAllSavedSessions, getStorageStatistics } from "../../services/session-storage";
 import type { StorageStatistics } from "../../services/session-storage";
 import {
@@ -30,6 +29,13 @@ import {
   testDiscord,
 } from "../../services/desktop-integrations";
 import type { DiscordDeliveryActivity } from "../../services/desktop-integrations";
+import { useAudioInputPreview } from "../../hooks/useAudioInputPreview";
+import { getAppPreferences, updateAppPreferences } from "../../services/app-preferences";
+import {
+  ensureNotificationPermission,
+  getLaunchAtStartup,
+  setLaunchAtStartup as updateLaunchAtStartup,
+} from "../../services/native-preferences";
 
 interface SettingRowProps {
   title: string;
@@ -42,10 +48,10 @@ type DiscordUiState =
 
 function SettingRow({ title, description, children }: SettingRowProps) {
   return (
-    <div className="flex items-center justify-between gap-5 border-t border-[#383838] py-4 first:border-t-0">
-      <div>
-        <strong className="text-xs">{title}</strong>
-        <p className="mt-1 text-[10px] text-[#737373]">{description}</p>
+    <div className="flex min-h-17 items-center justify-between gap-6 border-t border-[#383838] py-4 first:border-t-0">
+      <div className="min-w-0">
+        <strong className="text-[13px] font-medium text-[#F5F5F5]">{title}</strong>
+        <p className="mt-1 text-xs leading-5 text-[#737373]">{description}</p>
       </div>
       {children}
     </div>
@@ -53,9 +59,11 @@ function SettingRow({ title, description, children }: SettingRowProps) {
 }
 
 export function SettingsPage() {
-  const [noiseReduction, setNoiseReduction] = useState(true);
+  const [preferences, setPreferences] = useState(getAppPreferences);
+  const { microphoneDeviceId, noiseReduction, noteNotifications: notifications } = preferences;
   const [launchAtStartup, setLaunchAtStartup] = useState(false);
-  const [notifications, setNotifications] = useState(true);
+  const [preferenceError, setPreferenceError] = useState<string | null>(null);
+  const microphone = useAudioInputPreview(microphoneDeviceId, noiseReduction);
   const [discordState, setDiscordState] = useState<DiscordUiState>("not_configured");
   const [discordConfigured, setDiscordConfigured] = useState(false);
   const [showDiscordForm, setShowDiscordForm] = useState(false);
@@ -64,6 +72,8 @@ export function SettingsPage() {
     getLastDiscordDelivery(),
   );
   const [statistics, setStatistics] = useState<StorageStatistics | null>(null);
+  const [discordError, setDiscordError] = useState<string | null>(null);
+  const [discordNotice, setDiscordNotice] = useState<string | null>(null);
   const [storageError, setStorageError] = useState<string | null>(null);
   const [operation, setOperation] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -77,6 +87,20 @@ export function SettingsPage() {
         error instanceof Error ? error.message : "Storage statistics are unavailable.",
       );
     }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void getLaunchAtStartup()
+      .then((enabled) => {
+        if (active) setLaunchAtStartup(enabled);
+      })
+      .catch(() => {
+        if (active) setPreferenceError("Launch-at-startup status is unavailable.");
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -106,12 +130,12 @@ export function SettingsPage() {
   const configureWebhook = async () => {
     const value = webhookDraft.trim();
     if (!value) {
-      setStorageError("Enter a Discord incoming webhook URL.");
+      setDiscordError("Enter a Discord incoming webhook URL.");
       return;
     }
     setOperation("discord");
-    setStorageError(null);
-    setNotice(null);
+    setDiscordError(null);
+    setDiscordNotice(null);
     setDiscordState("testing");
     try {
       await configureDiscord(value);
@@ -119,10 +143,10 @@ export function SettingsPage() {
       setDiscordState("connected");
       setWebhookDraft("");
       setShowDiscordForm(false);
-      setNotice("Discord webhook verified and stored securely.");
+      setDiscordNotice("Discord webhook verified and stored securely.");
     } catch (error) {
       setDiscordState("failed");
-      setStorageError(errorMessage(error, "Discord configuration failed."));
+      setDiscordError(errorMessage(error, "Discord configuration failed."));
     } finally {
       setOperation(null);
     }
@@ -131,32 +155,32 @@ export function SettingsPage() {
   const removeWebhook = async () => {
     if (!window.confirm("Disconnect Discord and delete the saved webhook credential?")) return;
     setDiscordState("disconnecting");
-    setStorageError(null);
-    setNotice(null);
+    setDiscordError(null);
+    setDiscordNotice(null);
     try {
       await disconnectDiscord();
       setDiscordConfigured(false);
       setDiscordState("not_configured");
       setWebhookDraft("");
       setShowDiscordForm(false);
-      setNotice("Discord disconnected.");
+      setDiscordNotice("Discord disconnected.");
     } catch (error) {
       setDiscordState("failed");
-      setStorageError(errorMessage(error, "Discord disconnect failed."));
+      setDiscordError(errorMessage(error, "Discord disconnect failed."));
     }
   };
 
   const testWebhook = async () => {
     setDiscordState("testing");
-    setStorageError(null);
-    setNotice(null);
+    setDiscordError(null);
+    setDiscordNotice(null);
     try {
       await testDiscord();
       setDiscordState("connected");
-      setNotice("Discord connection verified.");
+      setDiscordNotice("Discord connection verified.");
     } catch (error) {
       setDiscordState("failed");
-      setStorageError(errorMessage(error, "Discord test failed."));
+      setDiscordError(errorMessage(error, "Discord test failed."));
     }
   };
 
@@ -248,66 +272,91 @@ export function SettingsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-360 px-[clamp(28px,4vw,64px)] pt-11.5 pb-14">
-      <header className="mb-7 flex items-center justify-between">
+    <div className="mx-auto max-w-360 px-[clamp(24px,4vw,64px)] pt-11 pb-16">
+      <header className="mb-8 flex items-start justify-between gap-6">
         <div>
           <span className="text-xs font-medium text-[#737373]">Preferences</span>
           <h1 className="mt-2 text-[clamp(28px,3vw,32px)] leading-tight font-semibold tracking-[-0.03em]">
             Settings
           </h1>
-          <p className="mt-2.5 text-sm text-[#A3A3A3]">
+          <p className="mt-3 text-[13px] leading-5 text-[#A3A3A3]">
             Configure how Noto listens, processes, and delivers your notes.
           </p>
         </div>
-        <span className="flex items-center gap-2 rounded-full border border-[#383838] bg-[#303030] px-3 py-2 text-[11px] text-[#A3A3A3]">
-          <Check size={13} /> Saved locally
+        <span className="mt-1 flex shrink-0 items-center gap-2 rounded-full border border-[#383838] bg-[#252525] px-3 py-2 text-[11px] text-[#A3A3A3]">
+          <Check className="text-[#22C55E]" size={13} /> Saved locally
         </span>
       </header>
 
-      <div className="grid grid-cols-2 gap-4">
-        <Card className="p-6">
-          <div className="mb-4 flex items-center gap-3">
-            <div className="flex size-8.5 items-center justify-center rounded-[9px] bg-[#343434] text-[#F5F5F5]">
-              <Mic2 size={19} />
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <Card className="p-6 transition-colors duration-200 hover:border-[#444444]">
+          <div className="mb-4 flex items-center gap-3.5">
+            <div className="flex size-10 items-center justify-center rounded-[10px] bg-[#343434] text-[#F5F5F5]">
+              <Mic size={18} strokeWidth={2} />
             </div>
             <div>
-              <h2 className="text-sm">Microphone</h2>
-              <p className="mt-1 text-[10px] text-[#737373]">
+              <h2 className="text-[15px] font-medium">Microphone</h2>
+              <p className="mt-1 text-xs text-[#737373]">
                 Choose the audio input used for conversations.
               </p>
             </div>
           </div>
           <SettingRow description="System default input device" title="Input source">
-            <button
-              className="flex items-center gap-2 rounded-lg border border-[#383838] bg-[#343434] px-3 py-2 text-[11px] text-[#A3A3A3]"
-              type="button"
+            <select
+              className="rounded-[9px] border border-[#383838] bg-[#2D2D2D] px-3 py-2 text-xs text-[#F5F5F5] outline-none focus:border-[#3B82F6]"
+              onChange={(event) => {
+                const next = updateAppPreferences({ microphoneDeviceId: event.target.value });
+                setPreferences(next);
+              }}
+              onFocus={() => void microphone.refreshDevices()}
+              value={microphoneDeviceId}
             >
-              Built-in Microphone <ChevronDown size={14} />
-            </button>
+              <option value="default">System default microphone</option>
+              {microphone.devices
+                .filter((device) => device.deviceId !== "default")
+                .map((device) => (
+                  <option key={device.deviceId} value={device.deviceId}>
+                    {device.label}
+                  </option>
+                ))}
+            </select>
           </SettingRow>
-          <SettingRow description="Preview of your current input level" title="Input level">
-            <div className="flex h-8 items-center gap-1" aria-label="Input level placeholder">
-              {[30, 55, 74, 48, 66, 38, 58, 44].map((height, index) => (
-                <span
-                  className="w-1 rounded bg-[#3B82F6]"
-                  key={index}
-                  style={{ height: `${height}%` }}
-                />
-              ))}
+          <SettingRow
+            description={microphone.error ?? "Start a private preview to verify the selected input"}
+            title="Input level"
+          >
+            <div className="flex items-center gap-2">
+              <div
+                className="flex h-8 items-center gap-1 rounded-lg bg-[#202020] px-2"
+                aria-label="Live input level"
+              >
+                {[30, 55, 74, 48, 66, 38, 58, 44].map((height, index) => (
+                  <span
+                    className="w-1 rounded-full bg-[#3B82F6]/80"
+                    key={index}
+                    style={{ height: `${Math.max(8, height * microphone.level)}%` }}
+                  />
+                ))}
+              </div>
+              <Button
+                onClick={() => void microphone.startPreview()}
+                size="small"
+                variant="secondary"
+              >
+                Test input
+              </Button>
             </div>
           </SettingRow>
         </Card>
 
-        <Card className="p-6">
-          <div className="mb-4 flex items-center gap-3">
-            <div className="flex size-8.5 items-center justify-center rounded-[9px] bg-[#343434] text-[#A3A3A3]">
+        <Card className="p-6 transition-colors duration-200 hover:border-[#444444]">
+          <div className="mb-4 flex items-center gap-3.5">
+            <div className="flex size-10 items-center justify-center rounded-[10px] border border-[#383838] bg-[#2D2D2D] text-[#A3A3A3]">
               <SlidersHorizontal size={19} />
             </div>
             <div>
-              <h2 className="text-sm">Audio processing</h2>
-              <p className="mt-1 text-[10px] text-[#737373]">
-                Visual preferences for future audio processing.
-              </p>
+              <h2 className="text-[15px] font-medium">Audio processing</h2>
+              <p className="mt-1 text-xs text-[#737373]">Tune how Noto handles captured audio.</p>
             </div>
           </div>
           <SettingRow
@@ -317,65 +366,61 @@ export function SettingsPage() {
             <Toggle
               checked={noiseReduction}
               label="Toggle noise reduction"
-              onChange={setNoiseReduction}
+              onChange={(enabled) =>
+                setPreferences(updateAppPreferences({ noiseReduction: enabled }))
+              }
             />
           </SettingRow>
         </Card>
 
-        <Card className="p-6">
-          <div className="mb-4 flex items-center gap-3">
-            <div className="flex size-8.5 items-center justify-center rounded-[9px] bg-[#343434] text-[#A3A3A3]">
-              <Bot size={19} />
+        <Card className="p-6 transition-colors duration-200 hover:border-[#444444]">
+          <div className="mb-5 flex items-center gap-3.5">
+            <div className="flex size-10 items-center justify-center rounded-[10px] border border-[#383838] bg-[#2D2D2D] text-[#A3A3A3]">
+              <DiscordIcon size={19} />
             </div>
             <div>
-              <h2 className="text-sm">Discord delivery</h2>
-              <p className="mt-1 text-[10px] text-[#737373]">
+              <h2 className="text-[15px] font-medium">Discord delivery</h2>
+              <p className="mt-1 text-xs text-[#737373]">
                 Send completed notes to a private Discord channel.
               </p>
             </div>
           </div>
-          <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-[10px] border border-[#383838] bg-[#343434] p-3.5">
-            <div
-              className="grid size-9 place-items-center rounded-lg bg-[#343434] font-bold text-[#F5F5F5]"
-              aria-hidden="true"
-            >
-              #
+          <div className="rounded-[10px] border border-[#383838] bg-[#202020]">
+            <div className="flex items-center justify-between gap-4 p-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <span
+                  className={`size-2.5 shrink-0 rounded-full transition-[background-color,box-shadow] duration-200 ${discordState === "connected" ? "bg-[#22C55E] shadow-[0_0_0_3px_rgb(34_197_94/15%),0_0_10px_rgb(34_197_94/45%)]" : discordState === "failed" ? "bg-[#EF4444]" : "bg-[#737373]"}`}
+                  aria-hidden="true"
+                />
+                <div className="min-w-0">
+                  <strong className="text-[13px] font-medium">
+                    {discordState === "connected" ? "Discord connected" : "Discord webhook"}
+                  </strong>
+                  <p className="mt-1 text-xs leading-5 text-[#737373]">
+                    {discordStatusLabel(discordState)}
+                  </p>
+                </div>
+              </div>
+              {!discordConfigured ? (
+                <Button
+                  disabled={discordState === "testing"}
+                  onClick={() => setShowDiscordForm(true)}
+                  size="small"
+                >
+                  Configure
+                </Button>
+              ) : null}
             </div>
-            <div>
-              <strong className="text-xs">
-                {discordState === "connected" ? "Discord connected" : "Discord webhook"}
-              </strong>
-              <p className="mt-1 text-[10px] text-[#737373]">{discordStatusLabel(discordState)}</p>
-            </div>
-            <Button
-              disabled={discordState === "testing" || discordState === "disconnecting"}
-              onClick={() => {
-                if (!discordConfigured) setShowDiscordForm(true);
-                else void removeWebhook();
-              }}
-              size="small"
-              variant={!discordConfigured ? "secondary" : "ghost"}
-            >
-              {discordState === "disconnecting"
-                ? "Disconnecting..."
-                : !discordConfigured
-                  ? "Configure"
-                  : "Disconnect"}
-            </Button>
           </div>
-          <p className="mt-3 text-[10px] leading-5 text-[#737373]">
-            The complete URL is never returned to the UI or written to logs. It is stored in your
-            operating system credential vault.
-          </p>
           {showDiscordForm ? (
-            <div className="mt-3 rounded-[10px] border border-[#383838] bg-[#343434] p-3.5">
-              <label className="text-[10px] font-semibold text-[#A3A3A3]" htmlFor="discord-webhook">
+            <div className="mt-3 rounded-[10px] border border-[#383838] bg-[#2D2D2D] p-4">
+              <label className="text-xs font-medium text-[#A3A3A3]" htmlFor="discord-webhook">
                 Discord webhook URL
               </label>
               <input
                 id="discord-webhook"
                 autoComplete="off"
-                className="mt-2 w-full rounded-lg border border-[#383838] bg-[#343434] px-3 py-2 text-xs outline-none focus:border-[#3B82F6]"
+                className="mt-2 w-full rounded-[9px] border border-[#383838] bg-[#202020] px-3 py-2.5 text-xs text-[#F5F5F5] outline-none transition-colors duration-150 placeholder:text-[#737373] hover:border-[#4A4A4A] focus:border-[#3B82F6] focus:ring-2 focus:ring-[#3B82F6]/20"
                 onChange={(event) => setWebhookDraft(event.target.value)}
                 placeholder="https://discord.com/api/webhooks/..."
                 type="password"
@@ -394,7 +439,7 @@ export function SettingsPage() {
                   onClick={() => {
                     setWebhookDraft("");
                     setShowDiscordForm(false);
-                    setStorageError(null);
+                    setDiscordError(null);
                   }}
                   size="small"
                   variant="ghost"
@@ -405,13 +450,11 @@ export function SettingsPage() {
             </div>
           ) : null}
           {discordConfigured && !showDiscordForm ? (
-            <div className="mt-3 flex gap-2">
+            <div className="mt-3 flex flex-wrap gap-2">
               <Button
-                className="mt-3"
                 disabled={discordState === "testing" || discordState === "disconnecting"}
                 onClick={() => void testWebhook()}
                 size="small"
-                variant="secondary"
               >
                 {discordState === "testing" ? "Testing..." : "Test connection"}
               </Button>
@@ -420,40 +463,73 @@ export function SettingsPage() {
                 onClick={() => {
                   setWebhookDraft("");
                   setShowDiscordForm(true);
-                  setStorageError(null);
-                  setNotice(null);
+                  setDiscordError(null);
+                  setDiscordNotice(null);
                 }}
                 size="small"
                 variant="ghost"
               >
                 Change webhook
               </Button>
+              <Button
+                disabled={discordState === "testing" || discordState === "disconnecting"}
+                onClick={() => void removeWebhook()}
+                size="small"
+                variant="ghost"
+              >
+                {discordState === "disconnecting" ? "Disconnecting..." : "Disconnect"}
+              </Button>
             </div>
           ) : null}
-          {lastDelivery ? (
-            <p
-              className={`mt-3 text-[10px] ${lastDelivery.kind === "success" ? "text-[#22C55E]" : "text-[#EF4444]"}`}
-            >
-              Last delivery: {lastDelivery.message} · {new Date(lastDelivery.at).toLocaleString()}
+          {discordError ? (
+            <p className="mt-3 text-xs leading-5 text-[#EF4444]" role="alert">
+              {discordError}
             </p>
           ) : null}
+          {discordNotice ? (
+            <p className="mt-3 text-xs leading-5 text-[#22C55E]" role="status">
+              {discordNotice}
+            </p>
+          ) : null}
+          <div className="mt-4 border-t border-[#383838] pt-4">
+            <span className="text-[11px] font-medium tracking-wide text-[#737373] uppercase">
+              Latest successful delivery
+            </span>
+            {lastDelivery?.kind === "success" ? (
+              <p className="mt-2 flex items-center gap-2 text-xs text-[#22C55E]">
+                <Check size={13} /> {lastDelivery.message} ·{" "}
+                {new Date(lastDelivery.at).toLocaleString()}
+              </p>
+            ) : (
+              <p className="mt-2 text-xs text-[#737373]">No successful deliveries yet.</p>
+            )}
+          </div>
+          <p className="mt-3 text-[11px] leading-5 text-[#737373]">
+            The webhook stays in your operating system credential vault and is never shown or
+            written to logs.
+          </p>
         </Card>
 
-        <Card className="p-6">
-          <div className="mb-4 flex items-center gap-3">
-            <div className="flex size-8.5 items-center justify-center rounded-[9px] bg-[#343434] text-[#A3A3A3]">
+        <Card className="p-6 transition-colors duration-200 hover:border-[#444444]">
+          <div className="mb-4 flex items-center gap-3.5">
+            <div className="flex size-10 items-center justify-center rounded-[10px] border border-[#383838] bg-[#2D2D2D] text-[#A3A3A3]">
               <Volume2 size={19} />
             </div>
             <div>
-              <h2 className="text-sm">Application</h2>
-              <p className="mt-1 text-[10px] text-[#737373]">Control Noto's desktop behavior.</p>
+              <h2 className="text-[15px] font-medium">Application</h2>
+              <p className="mt-1 text-xs text-[#737373]">Control Noto's desktop behavior.</p>
             </div>
           </div>
           <SettingRow description="Open Noto when your computer starts" title="Launch at startup">
             <Toggle
               checked={launchAtStartup}
               label="Toggle launch at startup"
-              onChange={setLaunchAtStartup}
+              onChange={(enabled) => {
+                setPreferenceError(null);
+                void updateLaunchAtStartup(enabled)
+                  .then(() => setLaunchAtStartup(enabled))
+                  .catch(() => setPreferenceError("Could not update launch-at-startup."));
+              }}
             />
           </SettingRow>
           <SettingRow
@@ -463,21 +539,36 @@ export function SettingsPage() {
             <Toggle
               checked={notifications}
               label="Toggle note notifications"
-              onChange={setNotifications}
+              onChange={(enabled) => {
+                setPreferenceError(null);
+                if (!enabled) {
+                  setPreferences(updateAppPreferences({ noteNotifications: false }));
+                  return;
+                }
+                void ensureNotificationPermission()
+                  .then((granted) => {
+                    if (!granted) throw new Error("permission denied");
+                    setPreferences(updateAppPreferences({ noteNotifications: true }));
+                  })
+                  .catch(() => setPreferenceError("Notification permission was not granted."));
+              }}
             />
           </SettingRow>
+          {preferenceError ? (
+            <p className="mt-2 text-xs text-[#EF4444]">{preferenceError}</p>
+          ) : null}
         </Card>
       </div>
 
-      <Card className="mt-4 p-6">
+      <Card className="mt-4 p-6 transition-colors duration-200 hover:border-[#444444]">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="flex size-8.5 items-center justify-center rounded-[9px] bg-[#343434] text-[#A3A3A3]">
+            <div className="flex size-10 items-center justify-center rounded-[10px] border border-[#383838] bg-[#2D2D2D] text-[#A3A3A3]">
               <Database size={19} />
             </div>
             <div>
-              <h2 className="text-sm">Local data and privacy</h2>
-              <p className="mt-1 text-[10px] text-[#737373]">
+              <h2 className="text-[15px] font-medium">Local data and privacy</h2>
+              <p className="mt-1 text-xs text-[#737373]">
                 Packaged desktop recordings use SQLite in Noto's application-data directory.
               </p>
             </div>
@@ -519,7 +610,7 @@ export function SettingsPage() {
             {notice}
           </p>
         ) : null}
-        <div className="mt-5 grid grid-cols-4 gap-3">
+        <div className="mt-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
           <StorageMetric label="Storage mode" value={statistics?.storageMode ?? "Loading"} />
           <StorageMetric
             label="Saved recordings"
@@ -531,7 +622,7 @@ export function SettingsPage() {
             value={formatBytes(statistics?.databaseSizeBytes ?? 0)}
           />
         </div>
-        <p className="mt-4 text-[10px] leading-5 text-[#737373]">
+        <p className="mt-4 text-[11px] leading-5 text-[#737373]">
           Local transcript and notes content is not encrypted at rest. SQLite storage is local only;
           audio may still be sent to NVIDIA for ASR and transcript text to the configured notes
           provider when those hosted features are used. Integrity status:{" "}
@@ -539,7 +630,7 @@ export function SettingsPage() {
         </p>
       </Card>
 
-      <div className="mt-4 flex items-center gap-2 text-[10px] text-[#737373]">
+      <div className="mt-4 flex items-center gap-2 text-[11px] text-[#737373]">
         <Bell size={14} /> Microphone and application preference controls remain UI previews; local
         data controls are active.
       </div>
@@ -549,9 +640,11 @@ export function SettingsPage() {
 
 function StorageMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-[#383838] bg-[#343434] p-3">
-      <span className="text-[10px] text-[#737373]">{label}</span>
-      <strong className="mt-1 block text-xs capitalize">{value.replaceAll("_", " ")}</strong>
+    <div className="rounded-[10px] border border-[#383838] bg-[#202020] p-3.5">
+      <span className="text-[11px] text-[#737373]">{label}</span>
+      <strong className="mt-1.5 block text-[13px] font-medium capitalize">
+        {value.replaceAll("_", " ")}
+      </strong>
     </div>
   );
 }

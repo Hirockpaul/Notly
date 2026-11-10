@@ -21,7 +21,7 @@ export class AudioCaptureSession {
     this.handlers = handlers;
   }
 
-  async start(deviceId?: string): Promise<MediaStreamTrack> {
+  async start(deviceId?: string, noiseReduction = true): Promise<MediaStreamTrack> {
     if (this.stream) throw new Error("An audio capture session is already active.");
     if (!navigator.mediaDevices?.getUserMedia) {
       throw new Error("Microphone capture is not supported by this WebView.");
@@ -32,8 +32,8 @@ export class AudioCaptureSession {
         audio: {
           channelCount: { ideal: 1 },
           deviceId: deviceId && deviceId !== "default" ? { exact: deviceId } : undefined,
-          echoCancellation: true,
-          noiseSuppression: true,
+          echoCancellation: noiseReduction,
+          noiseSuppression: noiseReduction,
           sampleRate: { ideal: TARGET_SAMPLE_RATE },
         },
         video: false,

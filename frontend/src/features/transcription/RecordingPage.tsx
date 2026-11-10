@@ -21,6 +21,9 @@ import { AudioBackendClient } from "../../services/audio-backend-client";
 import type { NotesDocument } from "../../services/audio-backend-client";
 import { saveCompletedSession, saveGeneratedNotes } from "../../services/session-storage";
 import type { SavedSession } from "../../services/session-storage";
+import { getAppPreferences, updateAppPreferences } from "../../services/app-preferences";
+import type { TranscriptionLanguage } from "../../services/app-preferences";
+import { notifyNotesReady } from "../../services/native-preferences";
 
 const waveHeights = [
   20, 34, 48, 72, 38, 56, 26, 64, 84, 52, 30, 74, 46, 68, 24, 58, 80, 36, 62, 44, 28, 70, 50, 32,
@@ -36,6 +39,9 @@ export function RecordingPage() {
   const [notesError, setNotesError] = useState<string | null>(null);
   const [storageError, setStorageError] = useState<string | null>(null);
   const [savedSession, setSavedSession] = useState<SavedSession | null>(null);
+  const [languageCode, setLanguageCode] = useState<TranscriptionLanguage>(
+    () => getAppPreferences().transcriptionLanguage,
+  );
   const {
     activeDeviceLabel,
     audioLevel,
@@ -81,7 +87,7 @@ export function RecordingPage() {
       setStorageError(null);
       setNotesStatus("idle");
       setSavedSession(null);
-      await ingestion.startSession();
+      await ingestion.startSession(languageCode);
       const microphoneStarted = await start();
       if (!microphoneStarted) await ingestion.finishSession();
     } catch {
@@ -118,6 +124,9 @@ export function RecordingPage() {
       const generated = await notesClient.generateNotes(ingestion.result.sessionId, regenerate);
       setNotes(generated.notes);
       setNotesStatus("generated");
+      if (getAppPreferences().noteNotifications) {
+        void notifyNotesReady(generated.notes.title);
+      }
       try {
         await saveGeneratedNotes(ingestion.result.sessionId, generated.notes);
       } catch (saveError) {
@@ -228,31 +237,49 @@ export function RecordingPage() {
       </Card>
 
       <div className="mt-3 flex items-center justify-between gap-5">
-        <label className="flex items-center gap-3 text-xs text-[#737373]">
-          <span>Input device</span>
-          <div className="relative">
+        <div className="flex items-center gap-5">
+          <label className="flex items-center gap-3 text-xs text-[#737373]">
+            <span>Input device</span>
+            <div className="relative">
+              <select
+                className="appearance-none rounded-md border border-[#383838] bg-[#343434] py-2 pr-8 pl-3 text-xs text-[#F5F5F5] outline-none transition-colors focus:border-[#3B82F6]"
+                disabled={isActive || isRequesting}
+                onChange={(event) => setSelectedDeviceId(event.target.value)}
+                value={selectedDeviceId}
+              >
+                <option value="default">System default microphone</option>
+                {devices
+                  .filter((device) => device.deviceId !== "default")
+                  .map((device) => (
+                    <option key={device.deviceId} value={device.deviceId}>
+                      {device.label}
+                    </option>
+                  ))}
+              </select>
+              <ChevronDown
+                aria-hidden="true"
+                className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2"
+                size={14}
+              />
+            </div>
+          </label>
+          <label className="flex items-center gap-3 text-xs text-[#737373]">
+            <span>Language</span>
             <select
-              className="appearance-none rounded-md border border-[#383838] bg-[#343434] py-2 pr-8 pl-3 text-xs text-[#F5F5F5] outline-none transition-colors focus:border-[#3B82F6]"
+              className="rounded-md border border-[#383838] bg-[#343434] px-3 py-2 text-xs text-[#F5F5F5] outline-none focus:border-[#3B82F6]"
               disabled={isActive || isRequesting}
-              onChange={(event) => setSelectedDeviceId(event.target.value)}
-              value={selectedDeviceId}
+              onChange={(event) => {
+                const language = event.target.value as TranscriptionLanguage;
+                setLanguageCode(language);
+                updateAppPreferences({ transcriptionLanguage: language });
+              }}
+              value={languageCode}
             >
-              <option value="default">System default microphone</option>
-              {devices
-                .filter((device) => device.deviceId !== "default")
-                .map((device) => (
-                  <option key={device.deviceId} value={device.deviceId}>
-                    {device.label}
-                  </option>
-                ))}
+              <option value="en-US">English</option>
+              <option value="hi-IN">Hindi</option>
             </select>
-            <ChevronDown
-              aria-hidden="true"
-              className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2"
-              size={14}
-            />
-          </div>
-        </label>
+          </label>
+        </div>
         <div className="flex items-center gap-2 text-xs text-[#737373]">
           <ShieldCheck size={15} />
           <span>

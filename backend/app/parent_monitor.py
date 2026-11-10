@@ -34,7 +34,6 @@ def monitor_linux_parent(
     if pidfd_open is None:
         on_parent_exit()
         return
-    poll_factory = poll_factory or select.poll
     try:
         pidfd = pidfd_open(pid)
     except OSError:
@@ -50,8 +49,9 @@ def monitor_linux_parent(
         if actual_start_time != expected_start_time:
             on_parent_exit()
             return
+        poll_factory = poll_factory or select.poll
         poller = poll_factory()
-        poller.register(pidfd, select.POLLIN)
+        poller.register(pidfd, getattr(select, "POLLIN", 1))
         poller.poll()
     finally:
         os.close(pidfd)

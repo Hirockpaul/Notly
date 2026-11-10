@@ -15,9 +15,9 @@ export function Button({
   ...props
 }: ButtonProps) {
   const variants = {
-    primary: "bg-[#F5F5F5] text-[#171717] hover:bg-white",
-    secondary: "border-[#383838] bg-[#343434] text-[#F5F5F5] hover:bg-[#3A3A3A]",
-    ghost: "bg-transparent text-[#A3A3A3] hover:bg-[#3A3A3A] hover:text-[#F5F5F5]",
+    primary: "bg-[#3B82F6] text-white hover:bg-[#4C8DF7] active:bg-[#3375DD]",
+    secondary: "border-[#383838] bg-[#2D2D2D] text-[#F5F5F5] hover:bg-[#343434]",
+    ghost: "bg-transparent text-[#A3A3A3] hover:bg-[#2D2D2D] hover:text-[#F5F5F5]",
     danger: "border-[#EF4444]/30 bg-transparent text-[#EF4444] hover:bg-[#EF4444]/10",
     accent:
       "border-white/70 bg-[linear-gradient(180deg,#F7F7F7_0%,#E5E5E5_48%,#B9B9B9_100%)] text-[#1F1F1F] shadow-[inset_0_1px_0_rgb(255_255_255/90%),inset_0_-1px_0_rgb(0_0_0/10%),0_3px_7px_rgb(0_0_0/28%)] hover:brightness-105",
@@ -29,7 +29,7 @@ export function Button({
   };
   return (
     <button
-      className={`inline-flex cursor-pointer items-center justify-center gap-2 rounded-md border border-transparent text-sm font-medium transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B82F6] disabled:cursor-not-allowed disabled:text-[#555555] disabled:opacity-50 ${variants[variant]} ${sizes[size]} ${className}`.trim()}
+      className={`inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-transparent text-sm font-medium transition-[background-color,border-color,color,opacity,transform] duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B82F6] active:translate-y-px disabled:cursor-not-allowed disabled:translate-y-0 disabled:text-[#737373] disabled:opacity-50 ${variants[variant]} ${sizes[size]} ${className}`.trim()}
       type={type}
       {...props}
     >
